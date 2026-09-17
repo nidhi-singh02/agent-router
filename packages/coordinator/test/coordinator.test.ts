@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { handleCoordinatorRequest, type CoordinatorEnv } from "../src/index.js";
+import { InMemoryLeaseRepository } from "../src/leases.js";
 
 function env(overrides: Partial<CoordinatorEnv> = {}): CoordinatorEnv {
   return {
     writerSecret: "writer-secret",
     readerSecret: "reader-secret",
     maxTtlSeconds: 30,
-    store: new Map(),
+    repository: new InMemoryLeaseRepository(),
     now: () => Date.parse("2026-09-17T09:00:00.000Z"),
     ...overrides,
   };
@@ -35,7 +36,7 @@ describe("heartbeat coordinator", () => {
       env(),
       "POST",
       "/leases",
-      { accountFingerprint: "abc", ttlSeconds: 10 },
+      { accountFingerprint: "abc", leaseId: "lease_1", ttlSeconds: 10 },
       {
         authorization: "Bearer reader-secret",
       },
@@ -51,6 +52,7 @@ describe("heartbeat coordinator", () => {
       "/leases",
       {
         accountFingerprint: "fp_shared",
+        leaseId: "lease_1",
         ttlSeconds: 20,
         modelFamily: "claude",
         reservedCapacity: 0.05,
@@ -62,7 +64,7 @@ describe("heartbeat coordinator", () => {
     const renewed = await invoke(
       writer,
       "POST",
-      "/leases/fp_shared/renew",
+      "/leases/fp_shared/lease_1/renew",
       { ttlSeconds: 20 },
       {
         authorization: "Bearer writer-secret",
@@ -89,7 +91,7 @@ describe("heartbeat coordinator", () => {
       runtime,
       "POST",
       "/leases",
-      { accountFingerprint: "fp", ttlSeconds: 5 },
+      { accountFingerprint: "fp", leaseId: "lease_1", ttlSeconds: 5 },
       {
         authorization: "Bearer writer-secret",
       },
@@ -99,7 +101,6 @@ describe("heartbeat coordinator", () => {
       authorization: "Bearer reader-secret",
     });
     expect(await status.json()).toEqual({ activity: "inactive" });
-    expect(runtime.store.size).toBe(0);
   });
 
   it("rejects malformed input and oversize TTLs", async () => {
@@ -108,7 +109,7 @@ describe("heartbeat coordinator", () => {
       runtime,
       "POST",
       "/leases",
-      { accountFingerprint: "fp", ttlSeconds: 999 },
+      { accountFingerprint: "fp", leaseId: "lease_1", ttlSeconds: 999 },
       {
         authorization: "Bearer writer-secret",
       },
@@ -132,12 +133,12 @@ describe("heartbeat coordinator", () => {
       runtime,
       "POST",
       "/leases",
-      { accountFingerprint: "fp", ttlSeconds: 10 },
+      { accountFingerprint: "fp", leaseId: "lease_1", ttlSeconds: 10 },
       {
         authorization: "Bearer writer-secret",
       },
     );
-    const released = await invoke(runtime, "POST", "/leases/fp/release", undefined, {
+    const released = await invoke(runtime, "POST", "/leases/fp/lease_1/release", undefined, {
       authorization: "Bearer writer-secret",
     });
     expect(released.status).toBe(204);
@@ -145,5 +146,46 @@ describe("heartbeat coordinator", () => {
       authorization: "Bearer reader-secret",
     });
     expect(await status.json()).toEqual({ activity: "inactive" });
+  });
+
+  it("releasing one overlapping lease keeps the account active", async () => {
+    const runtime = env();
+    for (const leaseId of ["lease_1", "lease_2"]) {
+      expect(
+        (
+          await invoke(
+            runtime,
+            "POST",
+            "/leases",
+            { accountFingerprint: "fp", leaseId, ttlSeconds: 10 },
+            { authorization: "Bearer writer-secret" },
+          )
+        ).status,
+      ).toBe(201);
+    }
+    await invoke(runtime, "POST", "/leases/fp/lease_1/release", undefined, {
+      authorization: "Bearer writer-secret",
+    });
+    const status = await invoke(runtime, "GET", "/accounts/fp/status", undefined, {
+      authorization: "Bearer reader-secret",
+    });
+    expect(await status.json()).toEqual({ activity: "active" });
+  });
+
+  it("returns 400 for malformed JSON and percent encoding", async () => {
+    const runtime = env();
+    const malformed = await handleCoordinatorRequest(
+      new Request("https://coordinator.example/leases", {
+        method: "POST",
+        headers: { authorization: "Bearer writer-secret", "content-type": "application/json" },
+        body: "{",
+      }),
+      runtime,
+    );
+    expect(malformed.status).toBe(400);
+    const encoded = await invoke(runtime, "POST", "/leases/%E0%A4%A/lease/release", undefined, {
+      authorization: "Bearer writer-secret",
+    });
+    expect(encoded.status).toBe(400);
   });
 });

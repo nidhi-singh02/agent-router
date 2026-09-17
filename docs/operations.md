@@ -21,6 +21,9 @@ Cloudflare account and environment are approved. Apply D1 migrations locally onl
 npx wrangler d1 migrations apply model-router-leases --local
 ```
 
+The Worker uses D1 for state; a missing binding returns `503`. Remote coordinator URLs
+must use HTTPS. Plain HTTP is accepted only for loopback development hosts.
+
 ## Hermes hook
 
 See `packages/hermes-heartbeat/README.md`. Do not modify an external Hermes checkout
@@ -35,10 +38,13 @@ never copied into router storage.
 
 Launch tokens and pane IDs make retries skip a second `herdr pane split`. Blocked
 agents are reported; the handoff is not blindly resent. Heartbeat TTLs expire remote
-leases after a crash.
+leases after a crash. Each provider operation owns a unique lease, renews it while the
+operation runs, and releases only that lease. Local capacity reservations are acquired
+atomically in SQLite so competing router processes cannot both consume the same reserve.
 
 ## TypeSafe
 
 Live `TYPESAFE_API_KEY` calls are opt-in. Default tests use a fake client. A local
 `router run --dry-run` without that key reports `typesafe-unavailable` rather than
-inventing a semantic ranking.
+inventing a semantic ranking. Task text containing a recognized credential is rejected
+locally with a sanitized error before any TypeSafe request.

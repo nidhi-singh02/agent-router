@@ -32,7 +32,9 @@ export interface HerdrClient {
   closePane(paneId: string): Promise<CommandResult>;
 }
 
-export function createProcessCommandAdapter(options: { timeoutMs?: number } = {}): RunCommand {
+export function createProcessCommandAdapter(
+  options: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {},
+): RunCommand {
   // Longer than Herdr's 30s agent start timeout, so Herdr reports its own error first.
   const timeoutMs = options.timeoutMs ?? 60_000;
   return (argv) =>
@@ -42,7 +44,7 @@ export function createProcessCommandAdapter(options: { timeoutMs?: number } = {}
         resolve({ ok: false, code: 1, stdout: "", stderr: "missing command" });
         return;
       }
-      const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], env: options.env });
       let stdout = "";
       let stderr = "";
       const timer = setTimeout(() => {

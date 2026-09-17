@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createHerdrClient } from "../../src/launch/herdr-client.js";
+import { createHerdrClient, createProcessCommandAdapter } from "../../src/launch/herdr-client.js";
 
 describe("herdr command adapter", () => {
   it("splits a background pane with the live Herdr split flags", async () => {
@@ -100,5 +100,18 @@ describe("herdr command adapter", () => {
         "5000",
       ],
     ]);
+  });
+
+  it("passes only the explicit child environment to a real process", async () => {
+    const run = createProcessCommandAdapter({
+      env: { PATH: process.env.PATH, SAFE_VALUE: "kept" },
+    });
+    const result = await run([
+      process.execPath,
+      "-e",
+      "process.stdout.write(JSON.stringify({safe:process.env.SAFE_VALUE,secret:process.env.ROUTER_TEST_SECRET}))",
+    ]);
+    expect(result.ok).toBe(true);
+    expect(JSON.parse(result.stdout)).toEqual({ safe: "kept" });
   });
 });

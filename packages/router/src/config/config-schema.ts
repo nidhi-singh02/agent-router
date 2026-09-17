@@ -34,8 +34,19 @@ const ConfigAccountInputSchema = z
     }
   });
 
+export function isSecureCoordinatorUrl(value: string): boolean {
+  const url = new URL(value);
+  return (
+    url.protocol === "https:" ||
+    (url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))
+  );
+}
+
 export const CoordinatorConfigSchema = z.object({
-  url: z.string().url(),
+  url: z
+    .string()
+    .url()
+    .refine(isSecureCoordinatorUrl, "coordinator URL must use HTTPS or HTTP loopback"),
   readerCredentialRef: CredentialRefSchema,
   writerCredentialRef: CredentialRefSchema.optional(),
 });

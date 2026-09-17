@@ -1,3 +1,5 @@
+import { isSecureCoordinatorUrl } from "../config/config-schema.js";
+
 export type CoordinatorActivity =
   "inactive" | "active" | "constrained" | "unauthorized" | "stale" | "unreachable";
 
@@ -10,6 +12,8 @@ export function createCoordinatorClient(input: {
   readerToken: string;
   fetchImpl?: typeof fetch;
 }): CoordinatorClient {
+  if (!isSecureCoordinatorUrl(input.baseUrl))
+    throw new Error("coordinator URL must use HTTPS or HTTP loopback");
   const fetchImpl = input.fetchImpl ?? fetch;
   return {
     async status(accountFingerprint: string) {

@@ -20,6 +20,7 @@ import { ReservationService } from "../reservations/reservation-service.js";
 import { readSharedActivity } from "../activity/activity-service.js";
 import type { CoordinatorClient } from "../activity/coordinator-client.js";
 import { cacheAffinityKey } from "../sessions/cache-affinity.js";
+import { remainingRatio } from "../policy/quota.js";
 
 export interface RunDeps {
   accounts: Account[];
@@ -175,11 +176,25 @@ export async function executeRun(
       json: { ok: false, reason: revalidated.reason },
     };
   }
-  const reservation = reservations.create({
+  const remaining = remainingRatio(deps.usage[selected.account.id]!, selected.model.quotaPool);
+  const maxTotalRatio =
+    selected.account.ownership === "shared"
+      ? (remaining ?? 0) -
+        deps.usage[selected.account.id]!.activeReservationRatio -
+        selected.account.reserveFloor
+      : Number.POSITIVE_INFINITY;
+  const reservation = reservations.tryCreate({
     accountId: selected.account.id,
     ratio: selected.estimatedCostRatio,
     ttlMs: 60_000,
+    maxTotalRatio,
   });
+  if (!reservation)
+    return {
+      code: 2,
+      output: "Launch revalidation failed: reservation-conflict",
+      json: { ok: false, reason: "reservation-conflict" },
+    };
   const handoff = buildHandoff({
     task,
     constraints: ["Do not deploy or publish anything without asking the user."],
@@ -211,6 +226,7 @@ export async function executeRun(
     existingLaunchToken: deps.existingLaunchToken,
     existingPaneId: deps.existingPaneId,
   });
+  if (options.dryRun || !launch.ok) reservations.release(reservation.id);
   if (sessionId && deps.sessions) {
     const startedAt = new Date().toISOString();
     const affinityInput = {

@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { chmodSync, mkdtempSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -14,6 +14,15 @@ function openTestDb() {
 }
 
 describe("sqlite store", () => {
+  it("repairs private permissions for the state directory and database", () => {
+    if (process.platform === "win32") return;
+    const home = mkdtempSync(path.join(os.tmpdir(), "model-router-private-"));
+    chmodSync(home, 0o755);
+    const db = openDatabase({ home });
+    db.close();
+    expect(statSync(home).mode & 0o777).toBe(0o700);
+    expect(statSync(path.join(home, "state.sqlite")).mode & 0o777).toBe(0o600);
+  });
   it("applies migrations idempotently and records a schema version", () => {
     const first = openTestDb();
     const version = Number(first.pragma("user_version", { simple: true }));

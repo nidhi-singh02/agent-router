@@ -1,5 +1,10 @@
 import { accountFingerprint } from "./fingerprint.js";
-import { serializeHeartbeat, type HeartbeatClient } from "./request-wrapper.js";
+import { randomUUID } from "node:crypto";
+import {
+  serializeHeartbeat,
+  type HeartbeatClient,
+  type HeartbeatLeaseHandle,
+} from "./request-wrapper.js";
 
 export interface HeartbeatClientOptions {
   baseUrl: string;
@@ -10,12 +15,17 @@ export interface HeartbeatClientOptions {
 }
 
 export function createHeartbeatClient(options: HeartbeatClientOptions): HeartbeatClient & {
-  create(accountId: string): Promise<void>;
+  create(accountId: string): Promise<HeartbeatLeaseHandle>;
 } {
+  const parsedBaseUrl = new URL(options.baseUrl);
+  const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(parsedBaseUrl.hostname);
+  if (parsedBaseUrl.protocol !== "https:" && !(parsedBaseUrl.protocol === "http:" && loopback))
+    throw new Error("coordinator URL must use HTTPS or HTTP loopback");
   const fetchImpl = options.fetchImpl ?? fetch;
   const ttlSeconds = options.ttlSeconds ?? 15;
+  const baseUrl = options.baseUrl.replace(/\/+$/, "");
   async function send(path: string, method: string, body?: unknown): Promise<void> {
-    await fetchImpl(`${options.baseUrl}${path}`, {
+    const response = await fetchImpl(`${baseUrl}${path}`, {
       method,
       headers: {
         authorization: `Bearer ${options.writerToken}`,
@@ -23,23 +33,26 @@ export function createHeartbeatClient(options: HeartbeatClientOptions): Heartbea
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
+    if (!response.ok) throw new Error(`heartbeat request failed (${response.status})`);
   }
   return {
+    renewalIntervalMs: Math.max(250, Math.floor((ttlSeconds * 1000 * 2) / 3)),
     async create(accountId: string) {
       const accountFingerprintValue = accountFingerprint(accountId, options.fingerprintSecret);
-      await send(
-        "/leases",
-        "POST",
-        serializeHeartbeat({ accountFingerprint: accountFingerprintValue, ttlSeconds }),
-      );
+      const lease = { accountFingerprint: accountFingerprintValue, leaseId: randomUUID() };
+      await send("/leases", "POST", {
+        ...serializeHeartbeat({ accountFingerprint: accountFingerprintValue, ttlSeconds }),
+        leaseId: lease.leaseId,
+      });
+      return lease;
     },
-    async renew(accountId: string) {
-      const fingerprint = accountFingerprint(accountId, options.fingerprintSecret);
-      await send(`/leases/${fingerprint}/renew`, "POST", { ttlSeconds });
+    async renew(lease) {
+      await send(`/leases/${lease.accountFingerprint}/${lease.leaseId}/renew`, "POST", {
+        ttlSeconds,
+      });
     },
-    async release(accountId: string) {
-      const fingerprint = accountFingerprint(accountId, options.fingerprintSecret);
-      await send(`/leases/${fingerprint}/release`, "POST");
+    async release(lease) {
+      await send(`/leases/${lease.accountFingerprint}/${lease.leaseId}/release`, "POST");
     },
   };
 }

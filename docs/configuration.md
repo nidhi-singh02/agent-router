@@ -38,3 +38,5 @@ one with `security add-generic-password -a "$USER" -s NAME -w`. For `typesafe.ap
 `local-session` collectors unless you pass `--usage`, which runs the full chain
 (official-cli/api, local-session, browser).
 `MODEL_ROUTER_COORDINATOR_URL` overrides the file URL.
+Coordinator URLs must use HTTPS; HTTP is accepted only for `localhost`, `127.0.0.1`, or
+`[::1]` during local development.

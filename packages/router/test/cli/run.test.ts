@@ -6,6 +6,7 @@ import { createProgram, runCli } from "../../src/cli.js";
 import { executeRun } from "../../src/commands/run.js";
 import { collectUsageChain } from "../../src/collectors/collector-chain.js";
 import { createHerdrClient } from "../../src/launch/herdr-client.js";
+import { ReservationService } from "../../src/reservations/reservation-service.js";
 import {
   claudeModel,
   cursorModel,
@@ -45,6 +46,7 @@ describe("router run", () => {
   });
 
   it("selects a safe dry-run route and prints the decision card", async () => {
+    const reservations = new ReservationService(() => now.getTime());
     const result = await executeRun(
       "Implement the approved session repository plan.",
       { dryRun: true },
@@ -55,6 +57,7 @@ describe("router run", () => {
         client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
         env: { HERDR_ENV: "1" },
         now,
+        reservations,
       },
     );
     expect(result.code).toBe(0);
@@ -65,6 +68,7 @@ describe("router run", () => {
     expect(result.output).toMatch(/exact/);
     expect(result.output).toMatch(/cursor-grok-4\.6-medium/);
     expect(result.json).toMatchObject({ ok: true, dryRun: true });
+    expect(reservations.activeRatio(personal.id)).toBe(0);
   });
 
   it("reports no eligible route without calling TypeSafe ranking", async () => {

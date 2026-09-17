@@ -15,9 +15,15 @@ export function serializeHeartbeat(payload: HeartbeatPayload): HeartbeatPayload 
 }
 
 export interface HeartbeatClient {
-  create(accountId: string): Promise<void>;
-  renew(accountId: string): Promise<void>;
-  release(accountId: string): Promise<void>;
+  create(accountId: string): Promise<HeartbeatLeaseHandle>;
+  renew(lease: HeartbeatLeaseHandle): Promise<void>;
+  release(lease: HeartbeatLeaseHandle): Promise<void>;
+  renewalIntervalMs?: number;
+}
+
+export interface HeartbeatLeaseHandle {
+  accountFingerprint: string;
+  leaseId: string;
 }
 
 export async function wrapProviderRequest<T>(
@@ -26,18 +32,26 @@ export async function wrapProviderRequest<T>(
   operation: () => Promise<T>,
   options: { onDiagnostic?: (message: string) => void } = {},
 ): Promise<T> {
+  let lease: HeartbeatLeaseHandle | undefined;
+  let renewal: ReturnType<typeof setInterval> | undefined;
   try {
-    await client.create(accountId);
-  } catch (error) {
-    options.onDiagnostic?.(`heartbeat create failed: ${String(error)}`);
+    lease = await client.create(accountId);
+    if (client.renewalIntervalMs && client.renewalIntervalMs > 0) {
+      renewal = setInterval(() => {
+        void client.renew(lease!).catch(() => options.onDiagnostic?.("heartbeat renew failed"));
+      }, client.renewalIntervalMs);
+    }
+  } catch {
+    options.onDiagnostic?.("heartbeat create failed");
   }
   try {
     return await operation();
   } finally {
+    if (renewal) clearInterval(renewal);
     try {
-      await client.release(accountId);
-    } catch (error) {
-      options.onDiagnostic?.(`heartbeat release failed: ${String(error)}`);
+      if (lease) await client.release(lease);
+    } catch {
+      options.onDiagnostic?.("heartbeat release failed");
     }
   }
 }

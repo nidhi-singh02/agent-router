@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { accountFingerprint } from "../src/fingerprint.js";
 import { wrapProviderRequest } from "../src/request-wrapper.js";
 import { createHeartbeatClient } from "../src/client.js";
@@ -23,6 +23,21 @@ describe("fingerprint", () => {
 });
 
 describe("request wrapper", () => {
+  it("rejects remote plaintext base URLs before sending the writer token", () => {
+    let called = false;
+    expect(() =>
+      createHeartbeatClient({
+        baseUrl: "http://example.com",
+        writerToken: "writer-secret",
+        fingerprintSecret: "secret",
+        fetchImpl: async () => {
+          called = true;
+          return new Response();
+        },
+      }),
+    ).toThrow(/https|loopback/i);
+    expect(called).toBe(false);
+  });
   it("creates, renews conceptually via TTL, and releases around a provider request", async () => {
     const events: string[] = [];
     const client = createHeartbeatClient({
@@ -46,7 +61,7 @@ describe("request wrapper", () => {
       writerToken: "writer",
       fingerprintSecret: "secret",
       fetchImpl: async () => {
-        throw new Error("coordinator down");
+        throw new Error("coordinator down with writer-secret and acct_shared");
       },
     });
     const diagnostics: string[] = [];
@@ -55,5 +70,78 @@ describe("request wrapper", () => {
     });
     expect(result).toBe(7);
     expect(diagnostics[0]).toMatch(/heartbeat/i);
+    expect(diagnostics.join(" ")).not.toMatch(/writer-secret|acct_shared/);
+  });
+
+  it.each([401, 403, 404, 429, 500])(
+    "rejects coordinator HTTP %s without exposing the body",
+    async (status) => {
+      const client = createHeartbeatClient({
+        baseUrl: "https://coordinator.example/",
+        writerToken: "writer-secret",
+        fingerprintSecret: "fingerprint-secret",
+        fetchImpl: async () => new Response("secret response body", { status }),
+      });
+      await expect(client.create("acct_shared")).rejects.toThrow(
+        `heartbeat request failed (${status})`,
+      );
+      await expect(client.create("acct_shared")).rejects.not.toThrow(
+        /secret response body|writer-secret|acct_shared/,
+      );
+    },
+  );
+
+  it("normalizes a trailing slash and uses a unique lease path", async () => {
+    const urls: string[] = [];
+    const client = createHeartbeatClient({
+      baseUrl: "https://coordinator.example/",
+      writerToken: "writer",
+      fingerprintSecret: "secret",
+      fetchImpl: async (url) => {
+        urls.push(String(url));
+        return new Response(null, { status: 201 });
+      },
+    });
+    const lease = await client.create("acct_shared");
+    await client.release(lease);
+    expect(urls[0]).toBe("https://coordinator.example/leases");
+    expect(urls[1]).toContain(`/leases/${lease.accountFingerprint}/${lease.leaseId}/release`);
+  });
+
+  it("keeps overlapping operations isolated and renews a long operation", async () => {
+    vi.useFakeTimers();
+    const events: string[] = [];
+    const client = createHeartbeatClient({
+      baseUrl: "https://coordinator.example",
+      writerToken: "writer",
+      fingerprintSecret: "secret",
+      ttlSeconds: 3,
+      fetchImpl: async (url) => {
+        events.push(new URL(String(url)).pathname);
+        return new Response(null, { status: 200 });
+      },
+    });
+    let finishFirst!: () => void;
+    let finishSecond!: () => void;
+    const first = wrapProviderRequest(
+      client,
+      "acct",
+      () => new Promise<void>((resolve) => (finishFirst = resolve)),
+    );
+    const second = wrapProviderRequest(
+      client,
+      "acct",
+      () => new Promise<void>((resolve) => (finishSecond = resolve)),
+    );
+    await vi.advanceTimersByTimeAsync(2_100);
+    expect(events.filter((path) => path.endsWith("/renew"))).toHaveLength(2);
+    finishFirst();
+    await first;
+    expect(events.filter((path) => path.endsWith("/release"))).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(2_100);
+    expect(events.filter((path) => path.endsWith("/renew"))).toHaveLength(3);
+    finishSecond();
+    await second;
+    vi.useRealTimers();
   });
 });

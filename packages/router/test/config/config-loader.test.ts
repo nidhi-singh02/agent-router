@@ -90,6 +90,29 @@ describe("config loader", () => {
 
     expect(() => loadConfig({ env: { MODEL_ROUTER_HOME: home } })).toThrow(/reserve/i);
   });
+
+  it("rejects a remote plaintext coordinator URL", () => {
+    const home = tempHome();
+    writeFileSync(
+      path.join(home, "config.json"),
+      JSON.stringify({
+        accounts: [],
+        coordinator: { url: "http://example.com", readerCredentialRef: "env:TOKEN" },
+      }),
+    );
+    expect(() => loadConfig({ env: { MODEL_ROUTER_HOME: home } })).toThrow(/https|loopback/i);
+  });
+
+  it("allows plaintext coordinator URLs on loopback", () => {
+    for (const url of ["http://localhost:8787", "http://127.0.0.1:8787", "http://[::1]:8787"]) {
+      const home = tempHome();
+      writeFileSync(
+        path.join(home, "config.json"),
+        JSON.stringify({ accounts: [], coordinator: { url, readerCredentialRef: "env:TOKEN" } }),
+      );
+      expect(loadConfig({ env: { MODEL_ROUTER_HOME: home } }).coordinator?.url).toBe(url);
+    }
+  });
 });
 
 describe("model catalog", () => {
