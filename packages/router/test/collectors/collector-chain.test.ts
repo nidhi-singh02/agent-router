@@ -103,7 +103,7 @@ describe("collector chain", () => {
     ]);
     expect(result.certainty).toBe("unknown");
     expect(result.windows[0]?.remainingRatio).toBeUndefined();
-    expect(result.source).toBe("browser-dashboard");
+    expect(result.source).toBe("none");
   });
 
   it("keeps the unknown fallback fresh so personal accounts are not excluded as stale", async () => {

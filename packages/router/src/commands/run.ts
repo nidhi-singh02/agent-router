@@ -217,7 +217,11 @@ export async function executeRun(
         : undefined),
     reservePolicy: selected.account.ownership === "shared" ? "40% protected" : "personal account",
     cacheDecision: "phase sticky unless eligibility changes",
-    usageSource: snapshot ? `${snapshot.certainty} ${snapshot.source}` : "unknown",
+    usageSource: !snapshot
+      ? "unknown"
+      : snapshot.source === "none"
+        ? "unknown (no collector returned usage)"
+        : `${snapshot.certainty} ${snapshot.source}`,
     freshness: snapshot ? `refreshed at ${snapshot.collectedAt}` : undefined,
     reset: snapshot?.windows.find((window) => window.resetsAt)?.resetsAt,
   });

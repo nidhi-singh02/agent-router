@@ -32,7 +32,7 @@ export async function collectUsageChain(
     accountId: account.id,
     windows: [{ kind: "five-hour" }],
     collectedAt: new Date(now).toISOString(),
-    source: "browser-dashboard",
+    source: "none",
     certainty: "unknown",
     // Unknown usage must still be fresh; otherwise every account is excluded as stale.
     expiresAt: new Date(now + 60_000).toISOString(),
