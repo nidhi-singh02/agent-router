@@ -59,4 +59,14 @@ describe("herdr command adapter", () => {
     expect(result.ok).toBe(false);
     expect(result.stderr).toContain("agent_blocked");
   });
+
+  it("closes a pane by id", async () => {
+    const calls: string[][] = [];
+    const herdr = createHerdrClient(async (argv) => {
+      calls.push([...argv]);
+      return { ok: true, code: 0, stdout: "", stderr: "" };
+    });
+    await herdr.closePane("w1:p9");
+    expect(calls).toEqual([["herdr", "pane", "close", "w1:p9"]]);
+  });
 });

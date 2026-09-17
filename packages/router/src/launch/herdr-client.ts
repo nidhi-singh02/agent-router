@@ -18,6 +18,7 @@ export interface HerdrClient {
     agentArgs: string[];
   }): Promise<CommandResult>;
   prompt(input: { target: string; text: string; wait?: boolean }): Promise<CommandResult>;
+  closePane(paneId: string): Promise<CommandResult>;
 }
 
 export function createProcessCommandAdapter(options: { timeoutMs?: number } = {}): RunCommand {
@@ -87,6 +88,9 @@ export function createHerdrClient(runCommand: RunCommand): HerdrClient {
         argv.push("--wait");
       }
       return runCommand(argv);
+    },
+    closePane(paneId) {
+      return runCommand(["herdr", "pane", "close", paneId]);
     },
   };
 }

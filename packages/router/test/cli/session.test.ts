@@ -76,6 +76,7 @@ describe("router sessions", () => {
         launchName: "grok-4.6",
         effort: "medium",
         status: "launched",
+        agentName: expect.stringMatching(/^router-cursor-[0-9a-f]{6}$/),
       },
     });
     expect(session?.handoffs).toHaveLength(1);
@@ -122,6 +123,7 @@ describe("router sessions", () => {
     expect(latest.out).toContain(`Route: cursor / grok-4.6 / medium (${personal.id})`);
     expect(latest.out).toContain("Status: launched");
     expect(latest.out).toContain("Pane: pane_abc");
+    expect(latest.out).toMatch(/Agent: router-cursor-[0-9a-f]{6}/);
 
     const byId = await cli(home, ["session", firstId]);
     expect(byId.code).toBe(0);
