@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import { Command } from "commander";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { Command, CommanderError } from "commander";
 import { executeRun, type RunDeps } from "./commands/run.js";
 import { formatStatus } from "./commands/status.js";
 import { formatSession } from "./commands/session.js";
@@ -99,8 +101,32 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
   return program;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const program = createProgram();
-  await program.parseAsync(process.argv);
-  process.exitCode = program.exitCode ?? 0;
+export async function runCli(argv: string[], options: CliOptions = {}): Promise<number> {
+  const program = createProgram(options);
+  try {
+    await program.parseAsync(argv);
+  } catch (error) {
+    // exitOverride turns --help, --version, and usage errors into thrown CommanderErrors.
+    if (error instanceof CommanderError) {
+      return error.exitCode;
+    }
+    throw error;
+  }
+  return program.exitCode ?? 0;
+}
+
+// npm link and global installs start the CLI through a symlink, so compare real paths.
+export function isEntrypoint(metaUrl: string, argv1: string | undefined): boolean {
+  if (!argv1) {
+    return false;
+  }
+  try {
+    return realpathSync(argv1) === realpathSync(fileURLToPath(metaUrl));
+  } catch {
+    return false;
+  }
+}
+
+if (isEntrypoint(import.meta.url, process.argv[1])) {
+  process.exitCode = await runCli(process.argv);
 }

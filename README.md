@@ -12,7 +12,7 @@ npm run verify
 ## Local setup
 
 `npm run build` does not put `router` on your PATH. Keep the config inside the repo
-(`.model-router/` is gitignored) and add an alias:
+(`.model-router/` is gitignored) and either link the CLI or add an alias:
 
 ```sh
 mkdir -p .model-router
@@ -23,11 +23,15 @@ Add to `~/.zshrc` (adjust the path to your checkout), then `source ~/.zshrc`:
 
 ```sh
 export MODEL_ROUTER_HOME="$HOME/Code/model-router/.model-router"
-alias router="node $HOME/Code/model-router/packages/router/dist/cli.js"
 ```
 
-Use an alias or a wrapper script that runs `node .../dist/cli.js`. Do not symlink
-`dist/cli.js` or use `npm link`: the CLI does nothing when started through a symlink.
+Then put `router` on your PATH with `npm link`, or with an alias instead:
+
+```sh
+npm link -w @model-router/router
+# or, in ~/.zshrc:
+alias router="node $HOME/Code/model-router/packages/router/dist/cli.js"
+```
 
 ## Accounts
 
