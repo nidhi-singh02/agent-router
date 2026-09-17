@@ -175,10 +175,21 @@ describe("createDefaultRunDeps", () => {
     const createProcessAdapter = vi.fn(() => adapter);
     const createHerdr = vi.fn(() => herdr);
     const deps = await createDefaultRunDeps(
-      { MODEL_ROUTER_HOME: homeWithAccount(), HERDR_ENV: "1" },
+      {
+        MODEL_ROUTER_HOME: homeWithAccount(),
+        HERDR_ENV: "1",
+        TYPESAFE_API_KEY: "secret",
+        UNRELATED_VALUE: "drop",
+      },
       { createProcessAdapter, createHerdr, collectorsForAccount: () => idleCollectors },
     );
     expect(createProcessAdapter).toHaveBeenCalledTimes(1);
+    expect(createProcessAdapter).toHaveBeenCalledWith({
+      env: expect.objectContaining({ HERDR_ENV: "1" }),
+    });
+    const childEnv = createProcessAdapter.mock.calls[0]?.[0]?.env;
+    expect(childEnv?.TYPESAFE_API_KEY).toBeUndefined();
+    expect(childEnv?.UNRELATED_VALUE).toBeUndefined();
     expect(createHerdr).toHaveBeenCalledWith(adapter);
     expect(deps.herdr).toBe(herdr);
   });

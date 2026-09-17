@@ -17,4 +17,7 @@ export async function withHeartbeat<T>(accountId: string, run: () => Promise<T>)
 }
 ```
 
-Heartbeat failures are non-fatal. Confirm the Hermes checkout path before integrating.
+Heartbeat failures are non-fatal to the wrapped provider request, but non-2xx coordinator
+responses produce sanitized diagnostics. Each wrapped request gets an independent lease,
+renews it below the configured TTL, and releases only that lease. Confirm the Hermes
+checkout path before integrating.

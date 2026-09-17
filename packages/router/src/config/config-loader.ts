@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { AccountSchema } from "../domain/account.js";
@@ -64,5 +64,6 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
 }
 
 export function ensureHome(home: string): void {
-  mkdirSync(home, { recursive: true });
+  mkdirSync(home, { recursive: true, mode: 0o700 });
+  if (process.platform !== "win32") chmodSync(home, 0o700);
 }

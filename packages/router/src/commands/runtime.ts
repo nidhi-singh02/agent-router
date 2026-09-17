@@ -21,6 +21,8 @@ import { runCommand } from "../collectors/command-runner.js";
 import { openDatabase } from "../store/database.js";
 import { SessionRepository } from "../store/session-repository.js";
 import { UsageRepository } from "../store/usage-repository.js";
+import { ReservationRepository } from "../store/reservation-repository.js";
+import { ReservationService } from "../reservations/reservation-service.js";
 
 function unavailableTypeSafe(): TypeSafePort {
   return {
@@ -31,11 +33,11 @@ function unavailableTypeSafe(): TypeSafePort {
   };
 }
 
-const SECRET_ENV = /API_KEY|TOKEN|SECRET|PASSWORD|COOKIE|AUTHORIZATION/i;
-
 export function sanitizeRuntimeEnv(env: NodeJS.Dict<string>): NodeJS.Dict<string> {
+  const allowed =
+    /^(?:PATH|HOME|USER|LOGNAME|SHELL|TERM|TERM_PROGRAM|TERM_PROGRAM_VERSION|COLORTERM|LANG|LC_[A-Z_]+|TMPDIR|TMP|TEMP|XDG_[A-Z_]+|HERDR_[A-Z0-9_]+|CODEX_HOME|CLAUDE_CONFIG_DIR|CURSOR_TRACE_ID|SSH_AUTH_SOCK)$/;
   return Object.fromEntries(
-    Object.entries(env).filter(([key, value]) => Boolean(value) && !SECRET_ENV.test(key)),
+    Object.entries(env).filter(([key, value]) => Boolean(value) && allowed.test(key)),
   );
 }
 
@@ -85,7 +87,7 @@ export function resolveCredential(
 
 export interface RuntimeOverrides {
   createTypeSafeClient?: (apiKey: string) => TypeSafePort;
-  createProcessAdapter?: () => RunCommand;
+  createProcessAdapter?: (options?: { env?: NodeJS.ProcessEnv }) => RunCommand;
   createHerdr?: (runCommand: RunCommand) => HerdrClient;
   collectorsForAccount?: (account: Account) => UsageCollector[];
   activityClient?: CoordinatorClient;
@@ -184,12 +186,15 @@ export async function createDefaultRunDeps(
       'security add-generic-password -a "$USER" -s model-router-typesafe -w';
   let herdr: HerdrClient | undefined;
   if (isHerdrEnv(env)) {
-    const adapter = (overrides.createProcessAdapter ?? createProcessCommandAdapter)();
+    const adapter = (overrides.createProcessAdapter ?? createProcessCommandAdapter)({
+      env: sanitizeRuntimeEnv(env),
+    });
     herdr = (overrides.createHerdr ?? createHerdrClient)(adapter);
   }
   return {
     typesafeKeyHint,
     sessions: overrides.sessions ?? new SessionRepository(db),
+    reservations: new ReservationService(Date.now, new ReservationRepository(db)),
     accounts: config.accounts,
     models: catalog.models.filter((model) =>
       config.accounts.some((account) => account.enabledModels.includes(model.id)),

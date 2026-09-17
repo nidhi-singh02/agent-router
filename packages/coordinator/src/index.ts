@@ -1,95 +1,102 @@
 import { requireRole } from "./auth.js";
-import { createLease, expireLeases, normalizedActivity, type LeaseRecord } from "./leases.js";
-
+import { D1LeaseRepository, type D1DatabaseLike, type LeaseRepository } from "./leases.js";
 export interface CoordinatorEnv {
   writerSecret: string;
   readerSecret: string;
   maxTtlSeconds: number;
-  store: Map<string, LeaseRecord>;
+  repository: LeaseRepository;
   now: () => number;
 }
-
+function decode(value: string): string | undefined {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return undefined;
+  }
+}
+async function json(request: Request): Promise<Record<string, unknown> | undefined> {
+  try {
+    const value = await request.json();
+    return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+function leaseInput(
+  body: Record<string, unknown>,
+  env: CoordinatorEnv,
+  accountFingerprint?: string,
+  leaseId?: string,
+) {
+  return {
+    accountFingerprint:
+      accountFingerprint ??
+      (typeof body.accountFingerprint === "string" ? body.accountFingerprint : ""),
+    leaseId: leaseId ?? (typeof body.leaseId === "string" ? body.leaseId : ""),
+    ttlSeconds: typeof body.ttlSeconds === "number" ? body.ttlSeconds : 0,
+    maxTtlSeconds: env.maxTtlSeconds,
+    modelFamily: typeof body.modelFamily === "string" ? body.modelFamily : undefined,
+    reservedCapacity: typeof body.reservedCapacity === "number" ? body.reservedCapacity : undefined,
+    now: env.now(),
+  };
+}
 export async function handleCoordinatorRequest(
   request: Request,
   env: CoordinatorEnv,
 ): Promise<Response> {
-  expireLeases(env.store, env.now());
   const url = new URL(request.url);
   const authorization = request.headers.get("authorization");
-
   if (request.method === "POST" && url.pathname === "/leases") {
-    if (!requireRole(authorization, env, "writer")) {
+    if (!requireRole(authorization, env, "writer"))
       return new Response("forbidden", { status: 403 });
-    }
-    const body = (await request.json()) as {
-      accountFingerprint?: string;
-      ttlSeconds?: number;
-      modelFamily?: string;
-      reservedCapacity?: number;
-    };
-    const result = createLease(env.store, {
-      accountFingerprint: body.accountFingerprint ?? "",
-      ttlSeconds: body.ttlSeconds ?? 0,
-      maxTtlSeconds: env.maxTtlSeconds,
-      modelFamily: body.modelFamily,
-      reservedCapacity: body.reservedCapacity,
-      now: env.now(),
-    });
-    if (!result.ok) {
-      return new Response(result.error, { status: 400 });
-    }
-    return new Response(null, { status: 201 });
+    const body = await json(request);
+    if (!body) return new Response("malformed lease request", { status: 400 });
+    const result = await env.repository.create(leaseInput(body, env));
+    return result.ok
+      ? new Response(null, { status: 201 })
+      : new Response(result.error, { status: 400 });
   }
-
-  const renew = url.pathname.match(/^\/leases\/([^/]+)\/renew$/);
-  if (request.method === "POST" && renew) {
-    if (!requireRole(authorization, env, "writer")) {
+  const action = url.pathname.match(/^\/leases\/([^/]+)\/([^/]+)\/(renew|release)$/);
+  if (request.method === "POST" && action) {
+    if (!requireRole(authorization, env, "writer"))
       return new Response("forbidden", { status: 403 });
+    const fingerprint = decode(action[1]!);
+    const leaseId = decode(action[2]!);
+    if (!fingerprint || !leaseId) return new Response("malformed lease request", { status: 400 });
+    if (action[3] === "release") {
+      await env.repository.release(fingerprint, leaseId);
+      return new Response(null, { status: 204 });
     }
-    const body = (await request.json().catch(() => ({}))) as { ttlSeconds?: number };
-    const result = createLease(env.store, {
-      accountFingerprint: decodeURIComponent(renew[1] ?? ""),
-      ttlSeconds: body.ttlSeconds ?? 0,
-      maxTtlSeconds: env.maxTtlSeconds,
-      now: env.now(),
-    });
-    if (!result.ok) {
-      return new Response(result.error, { status: 400 });
-    }
-    return new Response(null, { status: 200 });
+    const body = await json(request);
+    if (!body) return new Response("malformed lease request", { status: 400 });
+    const result = await env.repository.renew(leaseInput(body, env, fingerprint, leaseId));
+    return result.ok
+      ? new Response(null, { status: 200 })
+      : new Response(result.error, { status: 400 });
   }
-
-  const release = url.pathname.match(/^\/leases\/([^/]+)\/release$/);
-  if (request.method === "POST" && release) {
-    if (!requireRole(authorization, env, "writer")) {
-      return new Response("forbidden", { status: 403 });
-    }
-    env.store.delete(decodeURIComponent(release[1] ?? ""));
-    return new Response(null, { status: 204 });
-  }
-
   const status = url.pathname.match(/^\/accounts\/([^/]+)\/status$/);
   if (request.method === "GET" && status) {
-    if (!requireRole(authorization, env, "reader")) {
+    if (!requireRole(authorization, env, "reader"))
       return new Response("forbidden", { status: 403 });
-    }
-    const record = env.store.get(decodeURIComponent(status[1] ?? ""));
-    return Response.json({ activity: normalizedActivity(record) });
+    const fingerprint = decode(status[1]!);
+    if (!fingerprint) return new Response("malformed account fingerprint", { status: 400 });
+    return Response.json({ activity: await env.repository.activity(fingerprint, env.now()) });
   }
-
   return new Response("not found", { status: 404 });
 }
-
 export default {
   fetch(
     request: Request,
-    env: { WRITER_SECRET: string; READER_SECRET: string; LEASES: unknown },
+    env: { WRITER_SECRET?: string; READER_SECRET?: string; LEASES?: D1DatabaseLike },
   ): Promise<Response> {
+    if (!env.WRITER_SECRET || !env.READER_SECRET)
+      return Promise.resolve(new Response("forbidden", { status: 403 }));
+    if (!env.LEASES) return Promise.resolve(new Response("service unavailable", { status: 503 }));
     return handleCoordinatorRequest(request, {
       writerSecret: env.WRITER_SECRET,
       readerSecret: env.READER_SECRET,
       maxTtlSeconds: 30,
-      store: new Map(),
+      repository: new D1LeaseRepository(env.LEASES),
       now: () => Date.now(),
     });
   },

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { accountFingerprint } from "@model-router/hermes-heartbeat";
 import { readSharedActivity } from "../../src/activity/activity-service.js";
+import { createCoordinatorClient } from "../../src/activity/coordinator-client.js";
 
 const account = {
   id: "acct_shared",
@@ -8,6 +9,20 @@ const account = {
 };
 
 describe("activity service", () => {
+  it("rejects remote plaintext coordinator URLs before sending credentials", () => {
+    let called = false;
+    expect(() =>
+      createCoordinatorClient({
+        baseUrl: "http://example.com",
+        readerToken: "secret",
+        fetchImpl: async () => {
+          called = true;
+          return new Response();
+        },
+      }),
+    ).toThrow(/https|loopback/i);
+    expect(called).toBe(false);
+  });
   it("maps coordinator states without exposing identity", async () => {
     const client = {
       status: async () => "active" as const,

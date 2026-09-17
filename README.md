@@ -28,7 +28,8 @@ agent (Cursor, Claude Code, Codex, or OpenCode), and hands it the task.
 
 - **Node.js 20 or newer** (`nvm use` reads `.nvmrc`).
 - **A TypeSafe API key.** Routing always calls TypeSafe; there is no fallback. Each run sends
-  the task text to TypeSafe.
+  the task text to TypeSafe. Recognizable credentials are rejected locally before the call;
+  do not place other sensitive narrative data in routing tasks.
 - **At least one agent CLI you are logged in to:** `agent` (Cursor), `claude` (Claude Code),
   `codex`, or `opencode`. The router uses those logins; no provider API keys are needed.
 - **Herdr**, to launch agents. `router run` without `--dry-run` only launches from inside a
@@ -267,6 +268,9 @@ seconds. The router does not write this file.
 Each `router run` records a session in `.model-router/state.sqlite`. A launched agent's task
 ends with `Router session: <id>` and instructions for when its phase is done. With the skill
 installed, the flow is:
+
+The router repairs the state directory to `0700` and SQLite-related files to `0600` whenever
+it opens the database. Treat the task and handoff history as sensitive local data.
 
 1. `router run "plan feature X"` starts, for example, Grok for planning.
 2. The agent writes the plan to a file and asks you whether to route the next phase.
