@@ -1,7 +1,10 @@
 import { redactCollectorText } from "../normalizer.js";
 import { DASHBOARD_REGISTRY } from "./dashboard-registry.js";
 
-export function dryRunBrowserUsage(input: { html: string; provider: keyof typeof DASHBOARD_REGISTRY }) {
+export function dryRunBrowserUsage(input: {
+  html: string;
+  provider: keyof typeof DASHBOARD_REGISTRY;
+}) {
   const parsed = DASHBOARD_REGISTRY[input.provider].parser(input.html);
   const remaining = parsed.snapshot.windows
     .map((window) =>

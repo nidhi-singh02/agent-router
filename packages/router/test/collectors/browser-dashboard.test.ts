@@ -20,7 +20,9 @@ describe("browser dashboard parsers", () => {
 
   it("parses Anthropic dashboard fragments without inventing five-hour quota", () => {
     const parsed = parseAnthropicDashboard(readFileSync(path.join(dir, "anthropic.html"), "utf8"));
-    expect(parsed.snapshot.windows.find((window) => window.kind === "five-hour")?.remainingRatio).toBeUndefined();
+    expect(
+      parsed.snapshot.windows.find((window) => window.kind === "five-hour")?.remainingRatio,
+    ).toBeUndefined();
     expect(parsed.snapshot.certainty).toBe("estimated");
   });
 

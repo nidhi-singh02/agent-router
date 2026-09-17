@@ -9,7 +9,10 @@ export interface CoordinatorEnv {
   now: () => number;
 }
 
-export async function handleCoordinatorRequest(request: Request, env: CoordinatorEnv): Promise<Response> {
+export async function handleCoordinatorRequest(
+  request: Request,
+  env: CoordinatorEnv,
+): Promise<Response> {
   expireLeases(env.store, env.now());
   const url = new URL(request.url);
   const authorization = request.headers.get("authorization");
@@ -78,7 +81,10 @@ export async function handleCoordinatorRequest(request: Request, env: Coordinato
 }
 
 export default {
-  fetch(request: Request, env: { WRITER_SECRET: string; READER_SECRET: string; LEASES: unknown }): Promise<Response> {
+  fetch(
+    request: Request,
+    env: { WRITER_SECRET: string; READER_SECRET: string; LEASES: unknown },
+  ): Promise<Response> {
     return handleCoordinatorRequest(request, {
       writerSecret: env.WRITER_SECRET,
       readerSecret: env.READER_SECRET,

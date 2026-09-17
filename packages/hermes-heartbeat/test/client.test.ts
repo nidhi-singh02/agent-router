@@ -10,7 +10,9 @@ describe("fingerprint", () => {
     const second = accountFingerprint("acct_shared_anthropic", "secret");
     expect(first).toBe(second);
     expect(first).not.toContain("acct_shared_anthropic");
-    expect(first).not.toBe(createHmac("sha256", "secret").update("acct_shared_anthropic").digest("hex"));
+    expect(first).not.toBe(
+      createHmac("sha256", "secret").update("acct_shared_anthropic").digest("hex"),
+    );
   });
 
   it("is unlinkable without the secret", () => {

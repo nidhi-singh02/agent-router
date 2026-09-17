@@ -25,7 +25,7 @@ export function createDefaultRunDeps(env: NodeJS.Dict<string>): RunDeps {
       collectedAt,
       source: "official-cli",
       certainty: "unknown",
-      expiresAt: collectedAt,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
       activeReservationRatio: 0,
     };
   }

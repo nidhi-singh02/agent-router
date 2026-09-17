@@ -20,7 +20,11 @@ export function createLease(
     now: number;
   },
 ): { ok: true; record: LeaseRecord } | { ok: false; error: string } {
-  if (!input.accountFingerprint || input.ttlSeconds <= 0 || input.ttlSeconds > input.maxTtlSeconds) {
+  if (
+    !input.accountFingerprint ||
+    input.ttlSeconds <= 0 ||
+    input.ttlSeconds > input.maxTtlSeconds
+  ) {
     return { ok: false, error: "malformed lease request" };
   }
   const record: LeaseRecord = {

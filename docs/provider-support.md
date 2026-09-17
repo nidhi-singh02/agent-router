@@ -12,3 +12,5 @@ launch profiles, not a claim that a model is currently offered.
 
 Browser dashboard parsers are fragile estimated fallbacks against sanitized HTML fixtures.
 They never copy cookie databases.
+
+Local 2026-09-17 CLI dry runs did not attach a live dashboard; browser `--dry-run` reported unknown five-hour usage.

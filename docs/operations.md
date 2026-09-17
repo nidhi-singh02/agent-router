@@ -36,4 +36,6 @@ leases after a crash.
 
 ## TypeSafe
 
-Live `TYPESAFE_API_KEY` calls are opt-in. Default tests use a fake client.
+Live `TYPESAFE_API_KEY` calls are opt-in. Default tests use a fake client. A local
+`router run --dry-run` without that key reports `typesafe-unavailable` rather than
+inventing a semantic ranking.
