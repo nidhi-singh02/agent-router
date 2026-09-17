@@ -24,7 +24,7 @@ router usage refresh --source browser --dry-run
 
 `router run` without `--dry-run` still requires `HERDR_ENV=1` and should wait for user confirmation before any launch that would consume subscription quota.
 
-Default `router run` reads local-session quota caches. Add `--usage` for official CLI/API and browser collectors. Shared accounts still need known usage.
+Default `router run` reads local-session quota caches. Add `--usage` for official CLI/API and browser collectors. Personal accounts stay eligible without known quota. Shared accounts still need known usage.
 
 If the CLI prints two eligible routes, ask the user to choose. If it prints exclusions, report those reasons. Never override the 40% shared reserve.
 

@@ -169,8 +169,8 @@ Why: TypeSafe selected acct_personal_cursor:cursor:composer-2.5 for implementati
 Reserve policy: personal account
 Cache decision: no previous session
 Usage source: estimated local-session
-Quota: auto 80% left (spend 0% left)
-Freshness: refreshed at 2026-09-17T11:24:04.232Z
+Quota: auto 70% left (spend 45% left)
+Freshness: refreshed at 2026-09-17T12:00:00.000Z
 ```
 
 The router routes **one phase per task** (planning, implementation, debugging, review,
@@ -190,16 +190,14 @@ research, and so on). It does not answer your question itself; the launched agen
 Usage checks on `router run` are **local-session by default**: the router reads status-line
 cache files (milliseconds) and persists non-unknown snapshots to SQLite. Official CLI/API
 and browser collectors stay behind `--usage` (slower, and some live commands may consume
-quota). Shared accounts still need _known_ usage; a fresh status-line cache now supplies
-that without `--usage`. Personal accounts stay eligible when the cache is missing or stale
-(`certainty: unknown`, source `none`).
+quota). Personal accounts stay eligible when quota is missing, stale, or at 0%. Shared
+accounts still need _known_ usage above the reserve.
 
 `router status` without `--usage` still lists accounts only. `router status --usage` runs
 the full collector chain.
 
-Without a fresh cache, the router can pick a model whose quota is used up, for example a
-Grok model when Cursor's included spend is at 0%. With a fresh cache (or `--usage`), a
-model whose pool is at 0% is excluded as `quota-exhausted`.
+Quota on the card is informational. For a personal account, a model at 0% remaining is
+still eligible. Shared accounts still exclude `quota-exhausted` and `unknown-usage`.
 
 ### Where quota comes from
 
@@ -212,7 +210,7 @@ refreshes while a session of that tool is open and redrawing its status line.
 **Cursor:** `~/.cursor/statusline-quota-cache.json`
 
 ```json
-{ "pct": 0, "auto_left": 80, "at": 1789643962.29 }
+{ "pct": 45, "auto_left": 70, "at": 1700000000 }
 ```
 
 `pct` is the percent of included spend left (Grok models), `auto_left` the percent of the Auto
@@ -223,9 +221,9 @@ Claude Code passes to its status line:
 
 ```json
 {
-  "at": 1789644776.2,
-  "five_hour": { "used_percentage": 29, "resets_at": 1789659000 },
-  "seven_day": { "used_percentage": 4, "resets_at": 1790110800 }
+  "at": 1700000000,
+  "five_hour": { "used_percentage": 20, "resets_at": 1700013600 },
+  "seven_day": { "used_percentage": 10, "resets_at": 1700604800 }
 }
 ```
 
@@ -235,7 +233,7 @@ available.
 **Codex:** `~/.codex/statusline-quota-cache.json`
 
 ```json
-{ "weekly_left": 40, "at": 1789644000 }
+{ "weekly_left": 40, "at": 1700000000 }
 ```
 
 `weekly_left` is the percent of weekly quota remaining (0–100), and `at` is Unix time in
@@ -245,7 +243,8 @@ seconds. The router does not write this file.
 
 ### Personal and shared accounts
 
-- **Personal:** always eligible; with known quota, excluded only when its pool is at 0%.
+- **Personal:** stays eligible even if quota is missing, stale, or at 0%. The card may still
+  show remaining quota when a cache exists.
 - **Shared:** needs known usage (a fresh local-session cache, or `--usage`) and keeps 40% of
   its quota in reserve. It is excluded when the coordinator reports someone else using it.
   Without a coordinator (the usual local setup), it routes on its quota alone.
