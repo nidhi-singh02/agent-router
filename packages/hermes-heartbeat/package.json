@@ -1,5 +1,5 @@
 {
-  "name": "@model-router/hermes-heartbeat",
+  "name": "@agent-router/hermes-heartbeat",
   "version": "0.1.0",
   "type": "module",
   "exports": {

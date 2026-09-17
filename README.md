@@ -53,7 +53,7 @@ npm run build
 ### 2. Put `router` on your PATH
 
 ```sh
-npm link -w @model-router/router
+npm link -w @agent-router/router
 ```
 
 Or add an alias to `~/.zshrc`:

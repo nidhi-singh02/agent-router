@@ -3,6 +3,6 @@ import { packageName } from "../src/index.js";
 
 describe("router package", () => {
   it("exports the package name", () => {
-    expect(packageName).toBe("@model-router/router");
+    expect(packageName).toBe("@agent-router/router");
   });
 });

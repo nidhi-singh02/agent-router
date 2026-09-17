@@ -16,10 +16,10 @@ command = ["npm", "ci"]
 
 # hermes-heartbeat first: the router imports its built type declarations.
 [[build]]
-command = ["npm", "run", "build", "--workspace", "@model-router/hermes-heartbeat"]
+command = ["npm", "run", "build", "--workspace", "@agent-router/hermes-heartbeat"]
 
 [[build]]
-command = ["npm", "run", "build", "--workspace", "@model-router/router"]
+command = ["npm", "run", "build", "--workspace", "@agent-router/router"]
 
 # Interactive surfaces. Each opens a Herdr pane that runs the router CLI.
 [[panes]]

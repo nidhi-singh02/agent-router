@@ -6,7 +6,7 @@ import { createDefaultRunDeps } from "../../src/commands/runtime.js";
 import type { UsageCollector } from "../../src/collectors/types.js";
 import type { TypeSafePort } from "../../src/semantic/typesafe-client.js";
 import type { HerdrClient } from "../../src/launch/herdr-client.js";
-import { accountFingerprint } from "@model-router/hermes-heartbeat";
+import { accountFingerprint } from "@agent-router/hermes-heartbeat";
 import { personal, usageFor } from "../cli/fixtures.js";
 
 const idleCollectors: UsageCollector[] = [

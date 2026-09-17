@@ -9,6 +9,16 @@ and released under a single tag.
 
 ## [Unreleased]
 
+### Added
+
+- `router --version` (and `-V`) reports the package version.
+
+### Changed
+
+- Renamed the npm scope from `@model-router/*` to `@agent-router/*` to match the
+  repository name. Nothing was published under the old scope; a local checkout
+  needs `npm install` and a re-run of `npm link -w @agent-router/router`.
+
 ## [0.1.0] - 2026-09-18
 
 Initial public release. Pre-release software: the routing, quota, and account

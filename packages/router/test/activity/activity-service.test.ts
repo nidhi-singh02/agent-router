@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accountFingerprint } from "@model-router/hermes-heartbeat";
+import { accountFingerprint } from "@agent-router/hermes-heartbeat";
 import { readSharedActivity } from "../../src/activity/activity-service.js";
 import { createCoordinatorClient } from "../../src/activity/coordinator-client.js";
 

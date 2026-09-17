@@ -4,7 +4,7 @@ Call `wrapProviderRequest` around Hermes provider requests. This package does no
 modify an external Hermes checkout.
 
 ```ts
-import { createHeartbeatClient, wrapProviderRequest } from "@model-router/hermes-heartbeat";
+import { createHeartbeatClient, wrapProviderRequest } from "@agent-router/hermes-heartbeat";
 
 const heartbeats = createHeartbeatClient({
   baseUrl: process.env.COORDINATOR_URL!,
