@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.wrangler/
+coverage/
+*.log
+.env
+.env.local
+.DS_Store
+*.tgz
+.worktrees/
