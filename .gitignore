@@ -8,3 +8,4 @@ coverage/
 .DS_Store
 *.tgz
 .worktrees/
+.model-router/

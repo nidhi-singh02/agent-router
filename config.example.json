@@ -1,0 +1,18 @@
+{
+  "accounts": [
+    {
+      "id": "acct_personal_cursor",
+      "label": "personal cursor",
+      "provider": "cursor",
+      "agent": "cursor",
+      "ownership": "personal",
+      "collectorPreference": ["official-cli", "local-session", "browser-dashboard"],
+      "enabledModels": ["cursor:grok-4.6"],
+      "enabled": true,
+      "credentialRef": "env:CURSOR_API_KEY"
+    }
+  ],
+  "typesafe": {
+    "apiKeyRef": "env:TYPESAFE_API_KEY"
+  }
+}
