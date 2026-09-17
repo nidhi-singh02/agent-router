@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { loadModelCatalog } from "../catalog/model-catalog.js";
 import { loadConfig } from "../config/config-loader.js";
 import type { RunDeps } from "./run.js";
@@ -54,6 +55,35 @@ export function resolveEnvCredential(
   return value && value.length > 0 ? value : undefined;
 }
 
+export type KeychainReader = (service: string) => string | undefined;
+
+/** Reads a generic password from the macOS login Keychain by service name. */
+export function readMacKeychain(service: string): string | undefined {
+  if (process.platform !== "darwin") {
+    return undefined;
+  }
+  try {
+    const value = execFileSync("security", ["find-generic-password", "-s", service, "-w"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 5_000,
+    }).trim();
+    return value.length > 0 ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Resolves `env:NAME` from the environment or `keychain:NAME` from the Keychain. */
+export function resolveCredential(
+  ref: string | undefined,
+  env: NodeJS.Dict<string>,
+  readKeychain: KeychainReader = readMacKeychain,
+): string | undefined {
+  const keychain = ref ? /^keychain:([A-Za-z0-9._-]+)$/.exec(ref) : null;
+  return keychain ? readKeychain(keychain[1]!) : resolveEnvCredential(ref, env);
+}
+
 export interface RuntimeOverrides {
   createTypeSafeClient?: (apiKey: string) => TypeSafePort;
   createProcessAdapter?: () => RunCommand;
@@ -64,6 +94,7 @@ export interface RuntimeOverrides {
   runCommand?: typeof runCommand;
   fetchDashboardHtml?: (provider: Account["provider"]) => Promise<string>;
   sessions?: RunDeps["sessions"];
+  readKeychain?: KeychainReader;
   /** Skip every usage collector (router run without --usage); usage is reported as skipped. */
   skipUsage?: boolean;
 }
@@ -85,7 +116,7 @@ function defaultActivityClient(
   fetchImpl?: typeof fetch,
 ): CoordinatorClient {
   const config = loadConfig({ env });
-  const token = resolveEnvCredential(config.coordinator?.readerCredentialRef, env);
+  const token = resolveCredential(config.coordinator?.readerCredentialRef, env);
   const fingerprintSecret = env.HEARTBEAT_FINGERPRINT_SECRET;
   if (!config.coordinator?.url || !token || !fingerprintSecret) {
     return {
@@ -132,15 +163,29 @@ export async function createDefaultRunDeps(
   const usage: RunDeps["usage"] = Object.fromEntries(
     config.accounts.map((account, index) => [account.id, snapshots[index]!]),
   );
-  const apiKey = env.TYPESAFE_API_KEY;
+  // The configured reference (for example keychain:model-router-typesafe) works in every
+  // pane without exporting the key; TYPESAFE_API_KEY remains a fallback.
+  const apiKeyRef = config.typesafe?.apiKeyRef;
+  const apiKey =
+    resolveCredential(apiKeyRef, env, overrides.readKeychain) ??
+    resolveEnvCredential("env:TYPESAFE_API_KEY", env);
   const createTypeSafe = overrides.createTypeSafeClient ?? createLiveTypeSafeClient;
-  const client = apiKey && apiKey.length > 0 ? createTypeSafe(apiKey) : unavailableTypeSafe();
+  const client = apiKey ? createTypeSafe(apiKey) : unavailableTypeSafe();
+  const checked = [
+    ...(apiKeyRef && apiKeyRef !== "env:TYPESAFE_API_KEY" ? [apiKeyRef] : []),
+    "TYPESAFE_API_KEY",
+  ];
+  const typesafeKeyHint = apiKey
+    ? undefined
+    : `No TypeSafe API key found (checked ${checked.join(" and ")}). Store it once with: ` +
+      'security add-generic-password -a "$USER" -s model-router-typesafe -w';
   let herdr: HerdrClient | undefined;
   if (isHerdrEnv(env)) {
     const adapter = (overrides.createProcessAdapter ?? createProcessCommandAdapter)();
     herdr = (overrides.createHerdr ?? createHerdrClient)(adapter);
   }
   return {
+    typesafeKeyHint,
     sessions: overrides.sessions ?? new SessionRepository(openDatabase({ home: config.home })),
     accounts: config.accounts,
     models: catalog.models.filter((model) =>

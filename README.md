@@ -8,14 +8,24 @@ quota, reserve, freshness, activity, privacy, and launch policy.
 
 - Node.js 20 or newer (`nvm use` reads `.nvmrc`).
 - **A TypeSafe API key.** `router run` asks TypeSafe to rank the eligible routes and pick
-  the reasoning effort. There is no fallback: without `TYPESAFE_API_KEY`, every run stops
-  with `TypeSafe could not select a route (typesafe-unavailable)`. Each run makes live
-  TypeSafe calls that send the task text. Export the key in your shell, never in the
-  config file:
+  the reasoning effort. There is no fallback: without a key, every run stops with
+  `TypeSafe could not select a route (typesafe-unavailable)` and says where it looked.
+  Each run makes live TypeSafe calls that send the task text. Store the key once in the
+  macOS Keychain (the command prompts for it, so it never lands in shell history):
 
   ```sh
-  export TYPESAFE_API_KEY=...
+  security add-generic-password -a "$USER" -s model-router-typesafe -w
   ```
+
+  and reference it in `.model-router/config.json`:
+
+  ```json
+  "typesafe": { "apiKeyRef": "keychain:model-router-typesafe" }
+  ```
+
+  Every pane and agent then finds the key without exporting anything, and it stays out of
+  agents' environments. `TYPESAFE_API_KEY` in the environment still works as a fallback.
+  To replace the key, add `-U` to the same command.
 
 - At least one agent CLI you are logged in to: `agent` (Cursor), `claude` (Claude Code),
   `codex`, or `opencode`. The router uses those logins; provider API keys are not needed.

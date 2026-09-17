@@ -399,4 +399,29 @@ describe("router run", () => {
       { skipUsage: false },
     ]);
   });
+
+  it("adds the missing TypeSafe key hint when TypeSafe is unavailable", async () => {
+    const result = await executeRun(
+      "Implement the approved plan.",
+      { dryRun: true },
+      {
+        accounts: [personal],
+        models: [cursorModel],
+        usage: { [personal.id]: usageFor(personal.id, 0.8) },
+        client: {
+          calls: [],
+          systemOne: async () => {
+            throw new Error("TypeSafe is not configured");
+          },
+        },
+        env: {},
+        now,
+        typesafeKeyHint: "No TypeSafe API key found (checked TYPESAFE_API_KEY).",
+      },
+    );
+    expect(result.code).toBe(2);
+    expect(result.output).toBe(
+      "TypeSafe could not select a route (typesafe-unavailable). No TypeSafe API key found (checked TYPESAFE_API_KEY).",
+    );
+  });
 });

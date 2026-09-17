@@ -13,6 +13,6 @@
     }
   ],
   "typesafe": {
-    "apiKeyRef": "env:TYPESAFE_API_KEY"
+    "apiKeyRef": "keychain:model-router-typesafe"
   }
 }
