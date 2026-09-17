@@ -25,6 +25,13 @@ describe("agent commands", () => {
     ).toEqual(["agent", "--model", "cursor-grok-4.6-medium"]);
   });
 
+  it("launches Cursor models without effort variants by their exact name", () => {
+    expect(cursorModelId("composer-2.5", "none")).toBe("composer-2.5");
+    expect(
+      buildAgentCommand({ agent: "cursor", launchName: "composer-2.5", effort: "none" }),
+    ).toEqual(["agent", "--model", "composer-2.5"]);
+  });
+
   it("starts Claude Code with --model and --effort", () => {
     expect(
       buildAgentCommand({ agent: "claude-code", launchName: "sonnet", effort: "high" }),

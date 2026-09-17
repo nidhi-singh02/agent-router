@@ -19,6 +19,38 @@
       "relativeLatency": 1
     },
     {
+      "id": "cursor:grok-4.5",
+      "provider": "cursor",
+      "agent": "cursor",
+      "launchName": "cursor-grok-4.5-high",
+      "supportedEfforts": ["high"],
+      "capabilities": {
+        "planning": 0.75,
+        "coding": 0.75,
+        "debugging": 0.7,
+        "creativity": 0.65,
+        "research": 0.65
+      },
+      "relativeQuotaCost": 1,
+      "relativeLatency": 1
+    },
+    {
+      "id": "cursor:composer-2.5",
+      "provider": "cursor",
+      "agent": "cursor",
+      "launchName": "composer-2.5",
+      "supportedEfforts": ["none"],
+      "capabilities": {
+        "planning": 0.6,
+        "coding": 0.75,
+        "debugging": 0.7,
+        "creativity": 0.55,
+        "research": 0.55
+      },
+      "relativeQuotaCost": 0.5,
+      "relativeLatency": 0.5
+    },
+    {
       "id": "anthropic:claude-sonnet",
       "provider": "anthropic",
       "agent": "claude-code",
@@ -33,6 +65,22 @@
       },
       "relativeQuotaCost": 1,
       "relativeLatency": 1
+    },
+    {
+      "id": "anthropic:claude-opus",
+      "provider": "anthropic",
+      "agent": "claude-code",
+      "launchName": "opus",
+      "supportedEfforts": ["low", "medium", "high"],
+      "capabilities": {
+        "planning": 0.9,
+        "coding": 0.9,
+        "debugging": 0.9,
+        "creativity": 0.8,
+        "research": 0.85
+      },
+      "relativeQuotaCost": 3,
+      "relativeLatency": 1.5
     },
     {
       "id": "openai:codex",

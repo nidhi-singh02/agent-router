@@ -4,7 +4,7 @@ import type { ReasoningEffort } from "../domain/model-profile.js";
 const CLAUDE_EFFORTS = new Set<ReasoningEffort>(["low", "medium", "high"]);
 
 export function cursorModelId(launchName: string, effort: ReasoningEffort): string {
-  if (/^cursor-.+-(none|low|medium|high|ultra)$/.test(launchName)) {
+  if (effort === "none" || /^cursor-.+-(none|low|medium|high|ultra)$/.test(launchName)) {
     return launchName;
   }
   const base = launchName.replace(/^cursor-/, "");
