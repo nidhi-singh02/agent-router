@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createProgram } from "../../src/cli.js";
 import { executeRun } from "../../src/commands/run.js";
 import { createHerdrClient } from "../../src/launch/herdr-client.js";
@@ -144,5 +144,48 @@ describe("router run", () => {
     );
     expect(second.code).toBe(0);
     expect(calls.filter((argv) => argv[1] === "pane" && argv[2] === "split")).toHaveLength(1);
+  });
+
+  it("consumes shared activity before eligibility and excludes conservative shared accounts without TypeSafe ranking", async () => {
+    const client = fakeTypeSafe({ family: "implementation" });
+    const status = vi.fn(async () => "unreachable" as const);
+    const result = await executeRun(
+      "Implement the approved plan.",
+      { dryRun: true },
+      {
+        accounts: [shared],
+        models: [claudeModel],
+        usage: { [shared.id]: usageFor(shared.id, 0.85) },
+        client,
+        env: {},
+        now,
+        activityClient: { status },
+      },
+    );
+    expect(status).toHaveBeenCalledWith(shared.id);
+    expect(result.code).toBe(2);
+    expect(result.output).toMatch(/shared-activity-constrained/);
+    expect(client.calls).toEqual([]);
+  });
+
+  it("keeps a shared account eligible when activity is inactive and still queried first", async () => {
+    const client = fakeTypeSafe({ family: "implementation", phase: "implementation" });
+    const status = vi.fn(async () => "inactive" as const);
+    const result = await executeRun(
+      "Implement the approved plan.",
+      { dryRun: true },
+      {
+        accounts: [shared],
+        models: [claudeModel],
+        usage: { [shared.id]: usageFor(shared.id, 0.85) },
+        client,
+        env: {},
+        now,
+        activityClient: { status },
+      },
+    );
+    expect(status).toHaveBeenCalledWith(shared.id);
+    expect(result.code).toBe(0);
+    expect(client.calls.length).toBeGreaterThan(0);
   });
 });

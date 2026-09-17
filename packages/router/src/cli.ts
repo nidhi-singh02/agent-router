@@ -56,7 +56,7 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
         const result = await (options.run ?? executeRun)(
           task,
           { dryRun: Boolean(flags.dryRun) },
-          options.runDeps ?? createDefaultRunDeps(env),
+          options.runDeps ?? (await createDefaultRunDeps(env)),
         );
         stdout.write(`${flags.json ? JSON.stringify(result.json) : result.output}\n`);
         program.exitCode = result.code;

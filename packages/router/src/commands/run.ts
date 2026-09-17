@@ -12,6 +12,8 @@ import type { UsageSnapshot } from "../domain/usage.js";
 import type { ReasoningEffort } from "../domain/model-profile.js";
 import { estimateTaskCostRatio } from "../policy/cost-estimator.js";
 import { ReservationService } from "../reservations/reservation-service.js";
+import { readSharedActivity } from "../activity/activity-service.js";
+import type { CoordinatorClient } from "../activity/coordinator-client.js";
 
 export interface RunDeps {
   accounts: Account[];
@@ -24,6 +26,7 @@ export interface RunDeps {
   herdr?: HerdrClient;
   existingLaunchToken?: string;
   existingPaneId?: string;
+  activityClient?: CoordinatorClient;
 }
 
 export async function executeRun(
@@ -35,7 +38,21 @@ export async function executeRun(
   const reservations = deps.reservations ?? new ReservationService();
   const eligible = [];
   const exclusions = [];
+  const ownerMessages = new Map<string, string>();
   for (const account of deps.accounts) {
+    if (deps.activityClient) {
+      const activity = await readSharedActivity({
+        account,
+        client: deps.activityClient,
+      });
+      if (account.ownership === "shared" && activity.conservative) {
+        exclusions.push({ accountId: account.id, reason: "shared-activity-constrained" });
+        continue;
+      }
+      if (activity.ownerMessage) {
+        ownerMessages.set(account.id, activity.ownerMessage);
+      }
+    }
     const usage = deps.usage[account.id];
     if (!usage) {
       exclusions.push({ accountId: account.id, reason: "unknown-usage" });
@@ -154,7 +171,10 @@ export async function executeRun(
     phase: decision.phase,
     why: decision.reason,
     sharedActivity:
-      selected.account.ownership === "shared" ? "shared subscription currently active" : undefined,
+      ownerMessages.get(selected.account.id) ??
+      (selected.account.ownership === "shared" && !deps.activityClient
+        ? "shared subscription currently active"
+        : undefined),
     reservePolicy: selected.account.ownership === "shared" ? "40% protected" : "personal account",
     cacheDecision: "phase sticky unless eligibility changes",
     usageSource: snapshot ? `${snapshot.certainty} ${snapshot.source}` : "unknown",
