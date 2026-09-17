@@ -10,7 +10,7 @@ import { formatDecisionCard } from "../presentation/decision-card.js";
 import { formatPoolQuota } from "../presentation/quota.js";
 import { launchRoutedAgent } from "../launch/herdr-launcher.js";
 import type { HerdrClient } from "../launch/herdr-client.js";
-import { buildHandoff, serializeHandoff } from "../handoff/handoff-builder.js";
+import { buildHandoff, formatHandoffPrompt } from "../handoff/handoff-builder.js";
 import type { Account } from "../domain/account.js";
 import type { ModelProfile } from "../domain/model-profile.js";
 import type { UsageSnapshot } from "../domain/usage.js";
@@ -160,7 +160,6 @@ export async function executeRun(
   });
   const handoff = buildHandoff({
     task,
-    approvedSpec: "Use the current approved specification and plan.",
     constraints: ["Do not deploy or consume extra quota."],
     currentPhase: decision.phase,
     relevantFiles: [],
@@ -172,7 +171,7 @@ export async function executeRun(
     agent: selected.model.agent,
     launchName: selected.model.launchName,
     effort: decision.effort,
-    handoff: serializeHandoff(handoff),
+    handoff: formatHandoffPrompt(handoff),
     dryRun: options.dryRun,
     herdr: deps.herdr,
     existingLaunchToken: deps.existingLaunchToken,

@@ -260,7 +260,7 @@ describe("router run", () => {
     expect(client.calls.length).toBeGreaterThan(0);
   });
 
-  it("sends the complete structured handoff rather than only the task field", async () => {
+  it("sends the task and constraints as a readable prompt", async () => {
     const prompts: string[] = [];
     const herdr = createHerdrClient(async (argv) => {
       if (argv[1] === "agent" && argv[2] === "prompt") {
@@ -283,14 +283,15 @@ describe("router run", () => {
     );
     expect(result.code).toBe(0);
     expect(prompts).toHaveLength(1);
-    const payload = JSON.parse(prompts[0] ?? "{}") as {
-      phase?: string;
-      task?: string;
-      constraints?: string[];
-    };
-    expect(payload.phase).toBe("implementation");
-    expect(payload.task).toMatch(/Implement the approved plan/);
-    expect(payload.constraints).toContain("Do not deploy or consume extra quota.");
+    expect(prompts[0]).toBe(
+      [
+        "Implement the approved plan.",
+        "",
+        "Phase: implementation",
+        "Constraints:",
+        "- Do not deploy or consume extra quota.",
+      ].join("\n"),
+    );
   });
 
   it("labels usage as unknown when no collector returned usage", async () => {

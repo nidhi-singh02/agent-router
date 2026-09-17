@@ -54,6 +54,8 @@ export function herdrAgentName(agent: AgentId, launchToken: string): string {
   return `router-${herdrAgentKind(agent)}-${suffix}`;
 }
 
+const HANDOFF_TIMEOUT_MS = 30_000;
+
 export interface LaunchResult {
   ok: boolean;
   error?: string;
@@ -128,15 +130,37 @@ export async function launchRoutedAgent(input: {
       }
       return { ok: false, error, launchToken, paneId, paneCreated, agentName };
     }
+    // `agent start` returns once the agent UI is detected; let startup (MCP, skills) settle
+    // first, or a prompt pasted during startup can be dropped.
+    const settled = await herdr.waitFor({ target: agentName, timeoutMs: HANDOFF_TIMEOUT_MS });
+    if (!settled.ok) {
+      return {
+        ok: false,
+        error: herdrError(settled, "herdr agent wait failed"),
+        launchToken,
+        paneId,
+        paneCreated,
+        agentName,
+      };
+    }
   }
-  // Submit the handoff without --wait: waiting would block until the agent finishes its turn.
-  const prompted = await herdr.prompt({ target: agentName, text: input.handoff, wait: false });
+  // Wait only until the agent starts working (or asks a question), not for the whole turn.
+  // Herdr returns agent_prompt_stalled when the submission produced no activity.
+  const prompted = await herdr.prompt({
+    target: agentName,
+    text: input.handoff,
+    until: ["working", "blocked"],
+    timeoutMs: HANDOFF_TIMEOUT_MS,
+  });
   if (!prompted.ok) {
+    const output = `${prompted.stdout}${prompted.stderr}`;
     return {
       ok: false,
-      error: `${prompted.stdout}${prompted.stderr}`.includes("agent_blocked")
+      error: output.includes("agent_blocked")
         ? "agent is blocked; not resending the handoff"
-        : herdrError(prompted, "herdr agent prompt failed"),
+        : output.includes("agent_prompt_stalled")
+          ? `handoff not received by agent ${agentName} in pane ${paneId} (${herdrError(prompted, "").replace(/^: /, "")}); paste the task there or retry`
+          : herdrError(prompted, "herdr agent prompt failed"),
       launchToken,
       paneId,
       paneCreated,

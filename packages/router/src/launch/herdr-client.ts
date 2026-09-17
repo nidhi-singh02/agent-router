@@ -17,7 +17,18 @@ export interface HerdrClient {
     paneId: string;
     agentArgs: string[];
   }): Promise<CommandResult>;
-  prompt(input: { target: string; text: string; wait?: boolean }): Promise<CommandResult>;
+  prompt(input: {
+    target: string;
+    text: string;
+    wait?: boolean;
+    until?: HerdrAgentState[];
+    timeoutMs?: number;
+  }): Promise<CommandResult>;
+  waitFor(input: {
+    target: string;
+    until?: HerdrAgentState[];
+    timeoutMs?: number;
+  }): Promise<CommandResult>;
   closePane(paneId: string): Promise<CommandResult>;
 }
 
@@ -55,6 +66,15 @@ export function createProcessCommandAdapter(options: { timeoutMs?: number } = {}
     });
 }
 
+export type HerdrAgentState = "idle" | "working" | "blocked" | "done" | "unknown";
+
+function stateArgs(until: HerdrAgentState[] = [], timeoutMs?: number): string[] {
+  return [
+    ...until.flatMap((state) => ["--until", state]),
+    ...(timeoutMs === undefined ? [] : ["--timeout", String(timeoutMs)]),
+  ];
+}
+
 export function createHerdrClient(runCommand: RunCommand): HerdrClient {
   return {
     splitCurrent(options) {
@@ -85,9 +105,18 @@ export function createHerdrClient(runCommand: RunCommand): HerdrClient {
     prompt(input) {
       const argv = ["herdr", "agent", "prompt", input.target, input.text];
       if (input.wait !== false) {
-        argv.push("--wait");
+        argv.push("--wait", ...stateArgs(input.until, input.timeoutMs));
       }
       return runCommand(argv);
+    },
+    waitFor(input) {
+      return runCommand([
+        "herdr",
+        "agent",
+        "wait",
+        input.target,
+        ...stateArgs(input.until, input.timeoutMs),
+      ]);
     },
     closePane(paneId) {
       return runCommand(["herdr", "pane", "close", paneId]);
