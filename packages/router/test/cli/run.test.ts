@@ -147,9 +147,9 @@ describe("router run", () => {
     expect(calls.filter((argv) => argv[1] === "pane" && argv[2] === "split")).toHaveLength(1);
   });
 
-  it("consumes shared activity before eligibility and excludes conservative shared accounts without TypeSafe ranking", async () => {
+  it("excludes a shared account the coordinator reports as constrained, even with known quota", async () => {
     const client = fakeTypeSafe({ family: "implementation" });
-    const status = vi.fn(async () => "unreachable" as const);
+    const status = vi.fn(async () => "constrained" as const);
     const result = await executeRun(
       "Implement the approved plan.",
       { dryRun: true },
@@ -164,6 +164,76 @@ describe("router run", () => {
       },
     );
     expect(status).toHaveBeenCalledWith(shared.id);
+    expect(result.code).toBe(2);
+    expect(result.output).toMatch(/shared-activity-constrained/);
+    expect(client.calls).toEqual([]);
+  });
+
+  it("routes a shared account on known quota when the coordinator is unavailable", async () => {
+    const client = fakeTypeSafe({ family: "implementation", phase: "implementation" });
+    const status = vi.fn(async () => "unreachable" as const);
+    const result = await executeRun(
+      "Implement the approved plan.",
+      { dryRun: true },
+      {
+        accounts: [shared],
+        models: [claudeModel],
+        usage: { [shared.id]: usageFor(shared.id, 0.85) },
+        client,
+        env: {},
+        now,
+        activityClient: { status },
+      },
+    );
+    expect(result.code).toBe(0);
+    expect(client.calls.length).toBeGreaterThan(0);
+    expect(result.output).toContain(
+      "Shared activity: unknown (coordinator unavailable); routed on quota",
+    );
+    expect(result.output).toContain("Reserve policy: 40% protected");
+  });
+
+  it("still enforces the 40% reserve when the coordinator is unavailable", async () => {
+    const client = fakeTypeSafe({ family: "implementation" });
+    const result = await executeRun(
+      "Implement the approved plan.",
+      { dryRun: true },
+      {
+        accounts: [shared],
+        models: [claudeModel],
+        usage: { [shared.id]: usageFor(shared.id, 0.41) },
+        client,
+        env: {},
+        now,
+        activityClient: { status: async () => "unreachable" as const },
+      },
+    );
+    expect(result.code).toBe(2);
+    expect(result.output).toMatch(/below-reserve/);
+    expect(client.calls).toEqual([]);
+  });
+
+  it("excludes a shared account when the coordinator is unavailable and usage is unknown", async () => {
+    const client = fakeTypeSafe({ family: "implementation" });
+    const result = await executeRun(
+      "Implement the approved plan.",
+      { dryRun: true },
+      {
+        accounts: [shared],
+        models: [claudeModel],
+        usage: {
+          [shared.id]: usageFor(shared.id, 0, {
+            windows: [{ kind: "five-hour" }],
+            source: "skipped",
+            certainty: "unknown",
+          }),
+        },
+        client,
+        env: {},
+        now,
+        activityClient: { status: async () => "unreachable" as const },
+      },
+    );
     expect(result.code).toBe(2);
     expect(result.output).toMatch(/shared-activity-constrained/);
     expect(client.calls).toEqual([]);

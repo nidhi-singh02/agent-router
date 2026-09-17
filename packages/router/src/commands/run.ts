@@ -52,8 +52,15 @@ export async function executeRun(
         client: deps.activityClient,
       });
       if (account.ownership === "shared" && activity.conservative) {
-        exclusions.push({ accountId: account.id, reason: "shared-activity-constrained" });
-        continue;
+        // Without a coordinator signal, known quota plus the shared reserve is enough to route.
+        const knownUsage =
+          deps.usage[account.id]?.certainty !== undefined &&
+          deps.usage[account.id]?.certainty !== "unknown";
+        if (!(activity.coordinatorUnavailable && knownUsage)) {
+          exclusions.push({ accountId: account.id, reason: "shared-activity-constrained" });
+          continue;
+        }
+        ownerMessages.set(account.id, "unknown (coordinator unavailable); routed on quota");
       }
       if (activity.ownerMessage) {
         ownerMessages.set(account.id, activity.ownerMessage);

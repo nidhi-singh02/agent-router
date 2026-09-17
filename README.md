@@ -72,7 +72,10 @@ There is no `router accounts add` command. Add accounts by editing the `accounts
 
 - `agent`: `cursor`, `claude-code`, `codex`, or `opencode`.
 - `ownership`: `personal` or `shared`. Shared accounts keep a `reserveFloor` of at least
-  `0.40`.
+  `0.40`. A shared account is excluded when the coordinator reports it constrained. When
+  no coordinator signal is available (not configured, unreachable, unauthorized, or
+  stale), it routes on its quota if usage is known (`--usage`), still subject to the
+  reserve; with unknown usage it is excluded.
 - `collectorPreference`: one or more of `official-api`, `official-cli`, `local-session`,
   `browser-dashboard`.
 - `enabledModels`: IDs from `packages/router/config/models.json`. IDs not in that catalog
@@ -125,8 +128,8 @@ session of that tool redraws its status line. Usage checks run only with `--usag
 
 By default `router run` and `router status` skip every usage check, which keeps
 `router run --dry-run` at about 0.1 s before TypeSafe instead of about 1.2 s. Without usage,
-personal accounts still route (no quota check), shared accounts are excluded as
-`unknown-usage`, and the decision card shows
+personal accounts still route (no quota check), shared accounts are excluded, and the
+decision card shows
 `Usage source: skipped (run with --usage to check quota)`. Pass `--usage` to read quota,
 apply `quota-exhausted`, and show quota in `router status`.
 

@@ -45,6 +45,25 @@ describe("activity service", () => {
           },
         },
       }),
-    ).resolves.toMatchObject({ activity: "constrained", conservative: true });
+    ).resolves.toMatchObject({
+      activity: "constrained",
+      conservative: true,
+      coordinatorUnavailable: true,
+    });
+  });
+
+  it.each(["unreachable", "unauthorized", "stale"] as const)(
+    "marks a %s coordinator as unavailable",
+    async (state) => {
+      await expect(
+        readSharedActivity({ account, client: { status: async () => state } }),
+      ).resolves.toMatchObject({ conservative: true, coordinatorUnavailable: true });
+    },
+  );
+
+  it("does not mark an explicit constrained status as unavailable", async () => {
+    await expect(
+      readSharedActivity({ account, client: { status: async () => "constrained" } }),
+    ).resolves.toMatchObject({ conservative: true, coordinatorUnavailable: false });
   });
 });
