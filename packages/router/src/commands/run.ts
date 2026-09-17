@@ -1,0 +1,178 @@
+import { evaluateEligibility } from "../policy/eligibility.js";
+import { revalidateDecision } from "../policy/revalidate.js";
+import { decideRoute } from "../semantic/decision-engine.js";
+import type { TypeSafePort } from "../semantic/typesafe-client.js";
+import { formatDecisionCard } from "../presentation/decision-card.js";
+import { launchRoutedAgent } from "../launch/herdr-launcher.js";
+import type { HerdrClient } from "../launch/herdr-client.js";
+import { buildHandoff } from "../handoff/handoff-builder.js";
+import type { Account } from "../domain/account.js";
+import type { ModelProfile } from "../domain/model-profile.js";
+import type { UsageSnapshot } from "../domain/usage.js";
+import type { ReasoningEffort } from "../domain/model-profile.js";
+import { estimateTaskCostRatio } from "../policy/cost-estimator.js";
+import { ReservationService } from "../reservations/reservation-service.js";
+
+export interface RunDeps {
+  accounts: Account[];
+  models: ModelProfile[];
+  usage: Record<string, UsageSnapshot>;
+  client: TypeSafePort;
+  env: NodeJS.Dict<string>;
+  now?: Date;
+  reservations?: ReservationService;
+  herdr?: HerdrClient;
+  existingLaunchToken?: string;
+  existingPaneId?: string;
+}
+
+export async function executeRun(
+  task: string,
+  options: { dryRun: boolean },
+  deps: RunDeps,
+): Promise<{ output: string; json: unknown; code: number }> {
+  const now = deps.now ?? new Date();
+  const reservations = deps.reservations ?? new ReservationService();
+  const eligible = [];
+  const exclusions = [];
+  for (const account of deps.accounts) {
+    const usage = deps.usage[account.id];
+    if (!usage) {
+      exclusions.push({ accountId: account.id, reason: "unknown-usage" });
+      continue;
+    }
+    for (const model of deps.models.filter((item) => account.enabledModels.includes(item.id))) {
+      const estimatedCostRatio = estimateTaskCostRatio({
+        relativeQuotaCost: model.relativeQuotaCost,
+        baselineRatio: 0.02,
+      });
+      const usageWithReservations = {
+        ...usage,
+        activeReservationRatio: usage.activeReservationRatio + reservations.activeRatio(account.id),
+      };
+      const result = evaluateEligibility({
+        account,
+        model,
+        usage: usageWithReservations,
+        estimatedCostRatio,
+        now,
+      });
+      if (result.eligible) {
+        eligible.push({
+          opaqueId: `${account.id}:${model.id}`,
+          account,
+          model,
+          projectedRemainingRatio: result.projectedRemainingRatio,
+          estimatedCostRatio,
+        });
+      } else {
+        exclusions.push({ accountId: account.id, modelId: model.id, reason: result.reason });
+      }
+    }
+  }
+  if (eligible.length === 0) {
+    return {
+      code: 2,
+      output: `No eligible route. Exclusions: ${JSON.stringify(exclusions)}`,
+      json: { ok: false, exclusions },
+    };
+  }
+  const decision = await decideRoute({
+    task,
+    userRequestedUltra: /\bultra\b/i.test(task),
+    client: deps.client,
+    candidates: eligible.map((item) => ({
+      opaqueId: item.opaqueId,
+      agent: item.model.agent,
+      modelId: item.model.id,
+      supportedEfforts: item.model.supportedEfforts,
+      projectedRemainingRatio: item.projectedRemainingRatio,
+      capabilities: item.model.capabilities,
+    })),
+  });
+  if (decision.status === "ask-user") {
+    return {
+      code: 3,
+      output: `Low confidence. Choose: ${decision.options.join(" or ")}`,
+      json: { ok: false, options: decision.options },
+    };
+  }
+  if (decision.status !== "selected") {
+    return {
+      code: 2,
+      output: `TypeSafe could not select a route (${decision.status}).`,
+      json: { ok: false, status: decision.status },
+    };
+  }
+  const selected = eligible.find((item) => item.opaqueId === decision.candidateOpaqueId);
+  if (!selected) {
+    return { code: 2, output: "Selected candidate is no longer eligible.", json: { ok: false } };
+  }
+  const revalidated = revalidateDecision({
+    account: selected.account,
+    model: selected.model,
+    usage: deps.usage[selected.account.id]!,
+    estimatedCostRatio: selected.estimatedCostRatio,
+    selectedEffort: decision.effort,
+    now,
+  });
+  if (!revalidated.ok) {
+    return {
+      code: 2,
+      output: `Launch revalidation failed: ${revalidated.reason}`,
+      json: { ok: false, reason: revalidated.reason },
+    };
+  }
+  reservations.create({
+    accountId: selected.account.id,
+    ratio: selected.estimatedCostRatio,
+    ttlMs: 60_000,
+  });
+  const handoff = buildHandoff({
+    task,
+    approvedSpec: "Use the current approved specification and plan.",
+    constraints: ["Do not deploy or consume extra quota."],
+    currentPhase: decision.phase,
+    relevantFiles: [],
+    completedChecks: [],
+    remainingAcceptanceCriteria: [],
+  });
+  const launch = await launchRoutedAgent({
+    env: deps.env,
+    agent: selected.model.agent,
+    launchName: selected.model.launchName,
+    effort: decision.effort,
+    handoff: handoff.task,
+    dryRun: options.dryRun,
+    herdr: deps.herdr,
+    existingLaunchToken: deps.existingLaunchToken,
+    existingPaneId: deps.existingPaneId,
+  });
+  const snapshot = deps.usage[selected.account.id];
+  const card = formatDecisionCard({
+    selected: `${selected.model.agent} / ${selected.model.launchName} / ${decision.effort}`,
+    phase: decision.phase,
+    why: decision.reason,
+    sharedActivity:
+      selected.account.ownership === "shared" ? "shared subscription currently active" : undefined,
+    reservePolicy: selected.account.ownership === "shared" ? "40% protected" : "personal account",
+    cacheDecision: "phase sticky unless eligibility changes",
+    usageSource: snapshot ? `${snapshot.certainty} ${snapshot.source}` : "unknown",
+    freshness: snapshot ? `refreshed at ${snapshot.collectedAt}` : undefined,
+    reset: snapshot?.windows.find((window) => window.resetsAt)?.resetsAt,
+  });
+  return {
+    code: launch.ok ? 0 : 1,
+    output: `${card}\n${launch.printed ?? launch.error ?? ""}`,
+    json: {
+      ok: launch.ok,
+      selected: selected.opaqueId,
+      effort: decision.effort,
+      dryRun: options.dryRun,
+      launchToken: launch.launchToken,
+      paneId: launch.paneId,
+    },
+  };
+}
+
+export type { ReasoningEffort };

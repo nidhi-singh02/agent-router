@@ -8,6 +8,9 @@
       "import": "./dist/index.js"
     }
   },
+  "bin": {
+    "router": "./dist/cli.js"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json && mkdir -p dist/store/migrations && cp src/store/migrations/*.sql dist/store/migrations/",
     "typecheck": "tsc -p tsconfig.json --noEmit",
