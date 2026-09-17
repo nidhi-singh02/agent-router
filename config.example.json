@@ -6,10 +6,19 @@
       "provider": "cursor",
       "agent": "cursor",
       "ownership": "personal",
-      "collectorPreference": ["official-cli", "local-session", "browser-dashboard"],
-      "enabledModels": ["cursor:grok-4.6"],
-      "enabled": true,
-      "credentialRef": "env:CURSOR_API_KEY"
+      "collectorPreference": ["local-session"],
+      "enabledModels": ["cursor:grok-4.6", "cursor:composer-2.5"],
+      "enabled": true
+    },
+    {
+      "id": "acct_personal_claude",
+      "label": "personal claude",
+      "provider": "anthropic",
+      "agent": "claude-code",
+      "ownership": "personal",
+      "collectorPreference": ["local-session"],
+      "enabledModels": ["anthropic:claude-sonnet", "anthropic:claude-opus"],
+      "enabled": true
     }
   ],
   "typesafe": {
