@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { redactCollectorText } from "../collectors/normalizer.js";
+import { RouterSessionSchema } from "../domain/session.js";
+import type { SessionRepository } from "../store/session-repository.js";
 import { evaluateEligibility } from "../policy/eligibility.js";
 import { revalidateDecision } from "../policy/revalidate.js";
 import { decideRoute } from "../semantic/decision-engine.js";
@@ -27,6 +31,7 @@ export interface RunDeps {
   existingLaunchToken?: string;
   existingPaneId?: string;
   activityClient?: CoordinatorClient;
+  sessions?: Pick<SessionRepository, "save">;
 }
 
 export async function executeRun(
@@ -140,7 +145,7 @@ export async function executeRun(
       json: { ok: false, reason: revalidated.reason },
     };
   }
-  reservations.create({
+  const reservation = reservations.create({
     accountId: selected.account.id,
     ratio: selected.estimatedCostRatio,
     ttlMs: 60_000,
@@ -165,6 +170,41 @@ export async function executeRun(
     existingLaunchToken: deps.existingLaunchToken,
     existingPaneId: deps.existingPaneId,
   });
+  let sessionId: string | undefined;
+  if (!options.dryRun && deps.sessions) {
+    const startedAt = new Date().toISOString();
+    const session = RouterSessionSchema.parse({
+      id: `sess_${randomUUID()}`,
+      task: redactCollectorText(task),
+      phase: decision.phase,
+      route: {
+        accountId: selected.account.id,
+        modelId: selected.model.id,
+        agent: selected.model.agent,
+        launchName: selected.model.launchName,
+        effort: decision.effort,
+        reason: decision.reason,
+        status: launch.ok ? "launched" : "launch-failed",
+        launchToken: launch.launchToken,
+        error: launch.ok ? undefined : redactCollectorText(launch.error ?? "launch failed"),
+      },
+      reservations: [
+        {
+          id: reservation.id,
+          accountId: reservation.accountId,
+          ratio: reservation.ratio,
+          createdAt: startedAt,
+          expiresAt: new Date(reservation.expiresAt).toISOString(),
+        },
+      ],
+      handoffs: [handoff],
+      paneId: launch.paneId,
+      createdAt: startedAt,
+      updatedAt: startedAt,
+    });
+    deps.sessions.save(session);
+    sessionId = session.id;
+  }
   const snapshot = deps.usage[selected.account.id];
   const card = formatDecisionCard({
     selected: `${selected.model.agent} / ${selected.model.launchName} / ${decision.effort}`,
@@ -191,6 +231,7 @@ export async function executeRun(
       dryRun: options.dryRun,
       launchToken: launch.launchToken,
       paneId: launch.paneId,
+      sessionId,
     },
   };
 }

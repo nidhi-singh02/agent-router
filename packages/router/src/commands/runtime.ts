@@ -17,6 +17,8 @@ import { createCoordinatorClient, type CoordinatorClient } from "../activity/coo
 import { accountFingerprint } from "@model-router/hermes-heartbeat";
 import { createBrowserDashboardCollector } from "../collectors/browser/dashboard-collector.js";
 import { runCommand } from "../collectors/command-runner.js";
+import { openDatabase } from "../store/database.js";
+import { SessionRepository } from "../store/session-repository.js";
 
 function unavailableTypeSafe(): TypeSafePort {
   return {
@@ -59,6 +61,7 @@ export interface RuntimeOverrides {
   fetchImpl?: typeof fetch;
   runCommand?: typeof runCommand;
   fetchDashboardHtml?: (provider: Account["provider"]) => Promise<string>;
+  sessions?: RunDeps["sessions"];
 }
 
 function defaultActivityClient(
@@ -116,6 +119,7 @@ export async function createDefaultRunDeps(
     herdr = (overrides.createHerdr ?? createHerdrClient)(adapter);
   }
   return {
+    sessions: overrides.sessions ?? new SessionRepository(openDatabase({ home: config.home })),
     accounts: config.accounts,
     models: catalog.models.filter((model) =>
       config.accounts.some((account) => account.enabledModels.includes(model.id)),

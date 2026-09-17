@@ -38,12 +38,16 @@ describe("agent commands", () => {
     ).toEqual(["claude", "--model", "sonnet", "--effort", "high"]);
   });
 
-  it("starts Codex with --model and no unverified reasoning flag", () => {
-    expect(buildAgentCommand({ agent: "codex", launchName: "codex", effort: "medium" })).toEqual([
-      "codex",
-      "--model",
-      "codex",
-    ]);
+  it("starts Codex with --model and the chosen reasoning effort", () => {
+    expect(
+      buildAgentCommand({ agent: "codex", launchName: "gpt-5.6-sol", effort: "medium" }),
+    ).toEqual(["codex", "--model", "gpt-5.6-sol", "-c", 'model_reasoning_effort="medium"']);
+    expect(
+      buildAgentCommand({ agent: "codex", launchName: "gpt-6-astra", effort: "ultra" }).slice(-2),
+    ).toEqual(["-c", 'model_reasoning_effort="ultra"']);
+    expect(
+      buildAgentCommand({ agent: "codex", launchName: "gpt-5.6-sol", effort: "none" }),
+    ).toEqual(["codex", "--model", "gpt-5.6-sol"]);
   });
 
   it("starts OpenCode with --model in provider/model form", () => {

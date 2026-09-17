@@ -4,6 +4,24 @@ Explicit TypeScript CLI that selects an eligible subscription, model, and reason
 effort. TypeSafe ranks only the closed candidate set. Deterministic code enforces
 quota, reserve, freshness, activity, privacy, and launch policy.
 
+## Prerequisites
+
+- Node.js 20 or newer (`nvm use` reads `.nvmrc`).
+- **A TypeSafe API key.** `router run` asks TypeSafe to rank the eligible routes and pick
+  the reasoning effort. There is no fallback: without `TYPESAFE_API_KEY`, every run stops
+  with `TypeSafe could not select a route (typesafe-unavailable)`. Each run makes live
+  TypeSafe calls that send the task text. Export the key in your shell, never in the
+  config file:
+
+  ```sh
+  export TYPESAFE_API_KEY=...
+  ```
+
+- At least one agent CLI you are logged in to: `agent` (Cursor), `claude` (Claude Code),
+  `codex`, or `opencode`. The router uses those logins; provider API keys are not needed.
+- Herdr (terminal workspace manager for AI coding agents) to launch agents. `router run` without `--dry-run` only
+  launches inside a Herdr pane (`HERDR_ENV=1`).
+
 ```sh
 npm install
 npm run verify
@@ -70,10 +88,16 @@ Run `router accounts` to confirm the file parses and lists every account. See
 ```sh
 router run "<task>" --dry-run
 router status
-router session
+router session [id] [--list] [--limit <n>] [--json]
 router accounts
 router usage refresh --dry-run
 ```
+
+Every `router run` without `--dry-run` records a session in `.model-router/state.sqlite`:
+the task, phase, chosen account, model, and effort, launch status (`launched` or
+`launch-failed` with the error), Herdr pane, reservation, and handoff. `router session`
+shows the latest one, `router session <id>` shows a specific one, and
+`router session --list` lists recent sessions newest first. Dry runs are not recorded.
 
 Do not deploy the Cloudflare coordinator, write into an external Hermes checkout,
 install the skill globally, or consume live provider quota without explicit approval.
