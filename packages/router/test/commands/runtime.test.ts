@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -90,6 +90,66 @@ describe("createDefaultRunDeps", () => {
     expect(serialized).not.toContain(dummyKey);
     expect(serialized).not.toContain("sk-secret-123");
     expect(deps.env.TYPESAFE_API_KEY).toBeUndefined();
+  });
+
+  it("reads the TypeSafe key from a keychain reference without an env var", async () => {
+    const home = homeWithAccount();
+    const configPath = path.join(home, "config.json");
+    const config = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
+    writeFileSync(
+      configPath,
+      JSON.stringify({ ...config, typesafe: { apiKeyRef: "keychain:model-router-typesafe" } }),
+    );
+    const dummyKey = "ts_keychain_dummy_not_live";
+    const readKeychain = vi.fn((name: string) =>
+      name === "model-router-typesafe" ? dummyKey : undefined,
+    );
+    const createTypeSafeClient = vi.fn(stubTypeSafe);
+    const deps = await createDefaultRunDeps(
+      { MODEL_ROUTER_HOME: home },
+      { createTypeSafeClient, readKeychain, collectorsForAccount: () => idleCollectors },
+    );
+    expect(readKeychain).toHaveBeenCalledWith("model-router-typesafe");
+    expect(createTypeSafeClient).toHaveBeenCalledWith(dummyKey);
+    expect(JSON.stringify(deps)).not.toContain(dummyKey);
+    expect(deps.typesafeKeyHint).toBeUndefined();
+  });
+
+  it("falls back to TYPESAFE_API_KEY when the configured reference has no value", async () => {
+    const home = homeWithAccount();
+    const configPath = path.join(home, "config.json");
+    const config = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
+    writeFileSync(
+      configPath,
+      JSON.stringify({ ...config, typesafe: { apiKeyRef: "keychain:model-router-typesafe" } }),
+    );
+    const createTypeSafeClient = vi.fn(stubTypeSafe);
+    await createDefaultRunDeps(
+      { MODEL_ROUTER_HOME: home, TYPESAFE_API_KEY: "ts_env_dummy" },
+      {
+        createTypeSafeClient,
+        readKeychain: () => undefined,
+        collectorsForAccount: () => idleCollectors,
+      },
+    );
+    expect(createTypeSafeClient).toHaveBeenCalledWith("ts_env_dummy");
+  });
+
+  it("explains where the TypeSafe key was looked for when none is found", async () => {
+    const home = homeWithAccount();
+    const configPath = path.join(home, "config.json");
+    const config = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
+    writeFileSync(
+      configPath,
+      JSON.stringify({ ...config, typesafe: { apiKeyRef: "keychain:model-router-typesafe" } }),
+    );
+    const deps = await createDefaultRunDeps(
+      { MODEL_ROUTER_HOME: home },
+      { readKeychain: () => undefined, collectorsForAccount: () => idleCollectors },
+    );
+    expect(deps.typesafeKeyHint).toBe(
+      'No TypeSafe API key found (checked keychain:model-router-typesafe and TYPESAFE_API_KEY). Store it once with: security add-generic-password -a "$USER" -s model-router-typesafe -w',
+    );
   });
 
   it("does not inject a Herdr process adapter unless HERDR_ENV=1", async () => {

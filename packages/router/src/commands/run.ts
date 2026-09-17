@@ -33,6 +33,8 @@ export interface RunDeps {
   existingPaneId?: string;
   activityClient?: CoordinatorClient;
   sessions?: Pick<SessionRepository, "save" | "get">;
+  /** Where the TypeSafe key was looked for, when none was found. */
+  typesafeKeyHint?: string;
 }
 
 export async function executeRun(
@@ -137,7 +139,12 @@ export async function executeRun(
   if (decision.status !== "selected") {
     return {
       code: 2,
-      output: `TypeSafe could not select a route (${decision.status}).`,
+      output: [
+        `TypeSafe could not select a route (${decision.status}).`,
+        decision.status === "typesafe-unavailable" ? deps.typesafeKeyHint : undefined,
+      ]
+        .filter(Boolean)
+        .join(" "),
       json: { ok: false, status: decision.status },
     };
   }
