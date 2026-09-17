@@ -3,12 +3,62 @@ import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadConfig } from "../../src/config/config-loader.js";
+import { loadConfig, resolveHome } from "../../src/config/config-loader.js";
 import { loadModelCatalog } from "../../src/catalog/model-catalog.js";
 
 function tempHome(): string {
   return mkdtempSync(path.join(os.tmpdir(), "model-router-config-"));
 }
+
+function withPlatform<T>(platform: NodeJS.Platform, run: () => T): T {
+  const original = Object.getOwnPropertyDescriptor(process, "platform")!;
+  Object.defineProperty(process, "platform", { ...original, value: platform });
+  try {
+    return run();
+  } finally {
+    Object.defineProperty(process, "platform", original);
+  }
+}
+
+describe("resolveHome", () => {
+  it("prefers MODEL_ROUTER_HOME on every platform", () => {
+    for (const platform of ["darwin", "linux", "win32"] as NodeJS.Platform[]) {
+      const home = withPlatform(platform, () =>
+        resolveHome({
+          MODEL_ROUTER_HOME: "/explicit/home",
+          HOME: "/home/u",
+          APPDATA: "C:/AppData",
+        }),
+      );
+      expect(home).toBe("/explicit/home");
+    }
+  });
+
+  it("uses Application Support on macOS", () => {
+    const home = withPlatform("darwin", () => resolveHome({ HOME: "/Users/u" }));
+    expect(home).toBe(path.join("/Users/u", "Library/Application Support/model-router"));
+  });
+
+  it("uses XDG_CONFIG_HOME on Linux", () => {
+    const home = withPlatform("linux", () => resolveHome({ HOME: "/home/u" }));
+    expect(home).toBe(path.join("/home/u", ".config", "model-router"));
+
+    const xdg = withPlatform("linux", () =>
+      resolveHome({ HOME: "/home/u", XDG_CONFIG_HOME: "/home/u/xdg" }),
+    );
+    expect(xdg).toBe(path.join("/home/u/xdg", "model-router"));
+  });
+
+  it("uses APPDATA on Windows, falling back to the user profile", () => {
+    const appData = withPlatform("win32", () =>
+      resolveHome({ APPDATA: "C:/Users/u/AppData/Roaming" }),
+    );
+    expect(appData).toBe(path.join("C:/Users/u/AppData/Roaming", "model-router"));
+
+    const profile = withPlatform("win32", () => resolveHome({ USERPROFILE: "C:/Users/u" }));
+    expect(profile).toBe(path.join("C:/Users/u", "AppData/Roaming", "model-router"));
+  });
+});
 
 describe("config loader", () => {
   it("prefers MODEL_ROUTER_HOME over the platform config directory", () => {

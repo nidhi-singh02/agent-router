@@ -154,6 +154,19 @@ export async function launchRoutedAgent(input: {
   });
   if (!prompted.ok) {
     const output = `${prompted.stdout}${prompted.stderr}`;
+    // Herdr gives an accepted prompt a fixed 5s to show working or blocked, which a slow
+    // agent startup can miss even though it did receive the handoff. Confirm with a second
+    // wait before calling the launch failed.
+    if (output.includes("agent_prompt_stalled")) {
+      const recovered = await herdr.waitFor({
+        target: agentName,
+        until: ["working", "blocked"],
+        timeoutMs: HANDOFF_TIMEOUT_MS,
+      });
+      if (recovered.ok) {
+        return { ok: true, paneCreated, printed, launchToken, paneId, agentName };
+      }
+    }
     return {
       ok: false,
       error: output.includes("agent_blocked")
