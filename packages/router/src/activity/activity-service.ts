@@ -9,9 +9,11 @@ export async function readSharedActivity(input: {
   activity: CoordinatorActivity;
   ownerMessage?: string;
   conservative: boolean;
+  /** True when no activity signal was available (outage, auth, stale), as opposed to an explicit constrained status. */
+  coordinatorUnavailable: boolean;
 }> {
   if (input.account.ownership !== "shared") {
-    return { activity: "inactive", conservative: false };
+    return { activity: "inactive", conservative: false, coordinatorUnavailable: false };
   }
   try {
     const lookup = input.fingerprintSecret
@@ -23,13 +25,18 @@ export async function readSharedActivity(input: {
         activity,
         ownerMessage: "shared subscription currently active",
         conservative: false,
+        coordinatorUnavailable: false,
       };
     }
     if (activity === "unreachable" || activity === "unauthorized" || activity === "stale") {
-      return { activity: "constrained", conservative: true };
+      return { activity: "constrained", conservative: true, coordinatorUnavailable: true };
     }
-    return { activity, conservative: activity === "constrained" };
+    return {
+      activity,
+      conservative: activity === "constrained",
+      coordinatorUnavailable: false,
+    };
   } catch {
-    return { activity: "constrained", conservative: true };
+    return { activity: "constrained", conservative: true, coordinatorUnavailable: true };
   }
 }

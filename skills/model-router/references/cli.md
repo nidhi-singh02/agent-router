@@ -2,7 +2,7 @@
 
 Commands:
 
-- `router run "<task>" [--dry-run] [--usage] [--json]` (usage checks are off by default for speed; pass `--usage` to check quota. Without it shared accounts are excluded)
+- `router run "<task>" [--dry-run] [--usage] [--json]` (usage checks are off by default for speed; pass `--usage` to check quota. Without it shared accounts are excluded; with it a shared account routes on known quota when no coordinator signal is available)
 - `router status [--usage]` (`--usage` shows each account's quota)
 - `router session [id] [--list] [--limit <n>] [--json]` (latest launched session by default; dry runs are not recorded)
 - `router accounts`
