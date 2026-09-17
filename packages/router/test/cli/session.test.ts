@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { runCli } from "../../src/cli.js";
 import { executeRun } from "../../src/commands/run.js";
 import { createHerdrClient } from "../../src/launch/herdr-client.js";
@@ -18,6 +18,7 @@ function runDeps(home: string, env: NodeJS.Dict<string>) {
   return {
     db,
     deps: {
+      home,
       accounts: [personal],
       models: [cursorModel],
       usage: { [personal.id]: usageFor(personal.id, 0.8) },
@@ -149,5 +150,105 @@ describe("router sessions", () => {
     const missing = await cli(home, ["session", "sess_missing"]);
     expect(missing.code).toBe(1);
     expect(missing.err).toContain("Session not found: sess_missing");
+  });
+});
+
+describe("phase handoffs between router sessions", () => {
+  function capturePrompts(deps: ReturnType<typeof runDeps>["deps"]) {
+    const prompts: string[] = [];
+    deps.herdr = createHerdrClient(async (argv) => {
+      if (argv[2] === "prompt") prompts.push(argv[4] ?? "");
+      return { ok: true, code: 0, stdout: "pane_abc\n", stderr: "" };
+    });
+    return prompts;
+  }
+
+  it("tells a launched agent its session id and how to route the next phase", async () => {
+    const { db, deps } = runDeps(tempHome(), { HERDR_ENV: "1" });
+    const prompts = capturePrompts(deps);
+    const result = await executeRun("Plan the billing feature.", { dryRun: false }, deps);
+    const sessionId = (result.json as { sessionId: string }).sessionId;
+    expect(result.code).toBe(0);
+    expect(prompts).toHaveLength(1);
+    const prompt = prompts[0]!;
+    expect(prompt).toContain("- Do not deploy or publish anything without asking the user.");
+    expect(prompt).not.toMatch(/consume extra quota/);
+    expect(prompt).toContain(`Router session: ${sessionId}`);
+    expect(prompt).toContain(`router session ${sessionId}`);
+    expect(prompt).toContain(`router run --session ${sessionId} "<next-phase task`);
+    expect(prompt).toMatch(/ask the user/i);
+    expect(prompt).toMatch(/model-router skill/);
+    expect(deps.sessions.get(sessionId)?.handoffs[0]?.task).toBe("Plan the billing feature.");
+    db.close();
+  });
+
+  it("does not add router session instructions to a dry run", async () => {
+    const { db, deps } = runDeps(tempHome(), { HERDR_ENV: "1" });
+    const result = await executeRun("Plan the billing feature.", { dryRun: true }, deps);
+    expect(result.output).not.toContain("Router session:");
+    db.close();
+  });
+
+  it("links the next phase to the previous session and passes its context", async () => {
+    const { db, deps } = runDeps(tempHome(), { HERDR_ENV: "1" });
+    const planning = await executeRun("Plan the billing feature.", { dryRun: false }, deps);
+    const planningId = (planning.json as { sessionId: string }).sessionId;
+    const planningSession = deps.sessions.get(planningId)!;
+    deps.sessions.save({ ...planningSession, phase: "planning" });
+
+    const prompts = capturePrompts(deps);
+    const result = await executeRun(
+      "Implement the plan in docs/plans/billing.md.",
+      { dryRun: false, previousSessionId: planningId },
+      deps,
+    );
+    expect(result.code).toBe(0);
+    const nextId = (result.json as { sessionId: string }).sessionId;
+    expect(nextId).not.toBe(planningId);
+    expect(deps.sessions.get(nextId)?.previousSessionId).toBe(planningId);
+    expect(prompts[0]).toContain(
+      `Previous phase: planning (session ${planningId}): Plan the billing feature.`,
+    );
+    expect(result.output).toContain(`Previous session: ${planningId} (planning -> implementation)`);
+
+    const shown = await cli(deps.home, ["session", nextId]);
+    expect(shown.out).toContain(`Previous session: ${planningId}`);
+    db.close();
+  });
+
+  it("stops before routing when the previous session does not exist", async () => {
+    const { db, deps } = runDeps(tempHome(), { HERDR_ENV: "1" });
+    const result = await executeRun(
+      "Implement the plan.",
+      { dryRun: true, previousSessionId: "sess_missing" },
+      deps,
+    );
+    expect(result.code).toBe(2);
+    expect(result.output).toBe("Session not found: sess_missing");
+    expect(deps.client.calls).toEqual([]);
+    db.close();
+  });
+
+  it("passes --session from the CLI to the run", async () => {
+    const run = vi.fn(async () => ({ output: "ok", json: {}, code: 0 }));
+    const silent = { write: () => true };
+    await runCli(["node", "router", "run", "Implement it", "--session", "sess_prev", "--dry-run"], {
+      stdout: silent,
+      stderr: silent,
+      env: { MODEL_ROUTER_HOME: tempHome() },
+      run,
+      runDeps: {
+        accounts: [],
+        models: [],
+        usage: {},
+        client: fakeTypeSafe({}),
+        env: {},
+      },
+    });
+    expect(run).toHaveBeenCalledWith(
+      "Implement it",
+      { dryRun: true, previousSessionId: "sess_prev" },
+      expect.anything(),
+    );
   });
 });

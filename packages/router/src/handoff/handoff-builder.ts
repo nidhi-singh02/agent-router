@@ -29,9 +29,20 @@ export function serializeHandoff(handoff: Handoff): string {
   return redactCollectorText(JSON.stringify(handoff));
 }
 
+export interface HandoffRouterContext {
+  /** Session recorded for this launch; the agent uses it to route the next phase. */
+  sessionId: string;
+  previous?: { sessionId: string; phase: string; task: string };
+}
+
 /** The handoff as a plain-text prompt for an interactive agent; empty sections are omitted. */
-export function formatHandoffPrompt(handoff: Handoff): string {
+export function formatHandoffPrompt(handoff: Handoff, router?: HandoffRouterContext): string {
   const lines = [handoff.task, "", `Phase: ${handoff.phase}`];
+  if (router?.previous) {
+    lines.push(
+      `Previous phase: ${router.previous.phase} (session ${router.previous.sessionId}): ${router.previous.task}`,
+    );
+  }
   const section = (title: string, items: string[]) => {
     if (items.length > 0) {
       lines.push(`${title}:`, ...items.map((item) => `- ${item}`));
@@ -41,5 +52,16 @@ export function formatHandoffPrompt(handoff: Handoff): string {
   section("Relevant files", handoff.relevantFiles);
   section("Completed checks", handoff.completedChecks);
   section("Remaining acceptance criteria", handoff.remainingAcceptanceCriteria);
+  if (router) {
+    lines.push(
+      "",
+      `Router session: ${router.sessionId}`,
+      "When this phase is complete: write your plan or handoff notes to a file, then ask the user " +
+        "whether to route the next phase. If they agree, use the model-router skill: " +
+        `run \`router session ${router.sessionId}\`, then ` +
+        `\`router run --session ${router.sessionId} "<next-phase task that references that file>"\`. ` +
+        "Do not start another agent for the same phase.",
+    );
+  }
   return redactCollectorText(lines.join("\n"));
 }

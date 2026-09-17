@@ -13,6 +13,7 @@ export function formatSession(session: RouterSession): string {
     `Session: ${session.id}`,
     `Task: ${session.task}`,
     `Phase: ${session.phase}`,
+    ...(session.previousSessionId ? [`Previous session: ${session.previousSessionId}`] : []),
     `Route: ${routeLabel(session)}`,
     `Status: ${session.route?.status ?? "none"}`,
   ];

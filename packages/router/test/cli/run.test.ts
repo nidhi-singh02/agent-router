@@ -289,7 +289,7 @@ describe("router run", () => {
         "",
         "Phase: implementation",
         "Constraints:",
-        "- Do not deploy or consume extra quota.",
+        "- Do not deploy or publish anything without asking the user.",
       ].join("\n"),
     );
   });

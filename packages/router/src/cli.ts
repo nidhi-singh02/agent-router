@@ -64,28 +64,36 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
     .argument("<task>")
     .option("--dry-run", "Print the route without launching", false)
     .option("--json", "Emit JSON for plugins", false)
+    .option("--session <id>", "Route the next phase of an earlier router session")
     .option(
       "--usage",
       "Check quota before routing (slower; without it shared accounts are excluded)",
       false,
     )
-    .action(async (task: string, flags: { dryRun?: boolean; json?: boolean; usage?: boolean }) => {
-      try {
-        const result = await (options.run ?? executeRun)(
-          task,
-          { dryRun: Boolean(flags.dryRun) },
-          options.runDeps ??
-            (await (options.createRunDeps ?? createDefaultRunDeps)(env, {
-              skipUsage: !flags.usage,
-            })),
-        );
-        stdout.write(`${flags.json ? JSON.stringify(result.json) : result.output}\n`);
-        program.exitCode = result.code;
-      } catch (error) {
-        stderr.write(`${formatError(error)}\n`);
-        program.exitCode = 1;
-      }
-    });
+    .action(
+      async (
+        task: string,
+        flags: { dryRun?: boolean; json?: boolean; usage?: boolean; session?: string },
+      ) => {
+        try {
+          const result = await (options.run ?? executeRun)(
+            task,
+            flags.session
+              ? { dryRun: Boolean(flags.dryRun), previousSessionId: flags.session }
+              : { dryRun: Boolean(flags.dryRun) },
+            options.runDeps ??
+              (await (options.createRunDeps ?? createDefaultRunDeps)(env, {
+                skipUsage: !flags.usage,
+              })),
+          );
+          stdout.write(`${flags.json ? JSON.stringify(result.json) : result.output}\n`);
+          program.exitCode = result.code;
+        } catch (error) {
+          stderr.write(`${formatError(error)}\n`);
+          program.exitCode = 1;
+        }
+      },
+    );
   program
     .command("status")
     .option("--usage", "Show each account's quota (slower)", false)

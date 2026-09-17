@@ -136,7 +136,7 @@ apply `quota-exhausted`, and show quota in `router status`.
 ## Commands
 
 ```sh
-router run "<task>" [--dry-run] [--usage] [--json]
+router run "<task>" [--dry-run] [--usage] [--session <id>] [--json]
 router status [--usage]
 router session [id] [--list] [--limit <n>] [--json]
 router accounts
@@ -148,6 +148,25 @@ the task, phase, chosen account, model, and effort, launch status (`launched` or
 `launch-failed` with the error), Herdr pane, reservation, and handoff. `router session`
 shows the latest one, `router session <id>` shows a specific one, and
 `router session --list` lists recent sessions newest first. Dry runs are not recorded.
+
+## Phases and the model-router skill
+
+`router run` routes one phase per task (for example planning). A launched agent receives
+`Router session: <id>` and instructions for the end of its phase: write the plan or handoff
+notes to a file, ask you whether to route the next phase, then use the model-router skill
+to run `router session <id>` and `router run --session <id> "<next-phase task>"`. The new
+session records `previousSessionId`, the card shows
+`Previous session: <id> (planning -> implementation)`, and the next agent gets the previous
+phase and task. The next agent does not see the earlier conversation, so the task should
+reference the file.
+
+Install the skill for each agent by linking the repo copy, so updates arrive with `git pull`:
+
+```sh
+ln -s "$PWD/skills/model-router" ~/.claude/skills/model-router
+ln -s "$PWD/skills/model-router" ~/.codex/skills/model-router
+ln -s "$PWD/skills/model-router" ~/.cursor/skills/model-router
+```
 
 Do not deploy the Cloudflare coordinator, write into an external Hermes checkout,
 install the skill globally, or consume live provider quota without explicit approval.
