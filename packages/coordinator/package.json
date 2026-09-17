@@ -1,5 +1,5 @@
 {
-  "name": "@model-router/coordinator",
+  "name": "@agent-router/coordinator",
   "version": "0.1.0",
   "type": "module",
   "private": true,

@@ -1,4 +1,4 @@
-import { accountFingerprint } from "@model-router/hermes-heartbeat";
+import { accountFingerprint } from "@agent-router/hermes-heartbeat";
 import type { CoordinatorActivity, CoordinatorClient } from "./coordinator-client.js";
 
 export async function readSharedActivity(input: {

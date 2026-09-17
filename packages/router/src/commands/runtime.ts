@@ -15,7 +15,7 @@ import {
 } from "../launch/herdr-client.js";
 import { isHerdrEnv } from "../launch/readiness.js";
 import { createCoordinatorClient, type CoordinatorClient } from "../activity/coordinator-client.js";
-import { accountFingerprint } from "@model-router/hermes-heartbeat";
+import { accountFingerprint } from "@agent-router/hermes-heartbeat";
 import { createBrowserDashboardCollector } from "../collectors/browser/dashboard-collector.js";
 import { runCommand } from "../collectors/command-runner.js";
 import { openDatabase } from "../store/database.js";

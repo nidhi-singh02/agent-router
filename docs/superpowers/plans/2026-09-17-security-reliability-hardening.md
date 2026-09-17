@@ -38,7 +38,7 @@
 - Consumes: writer/reader bearer authentication and normalized `Activity` responses.
 
 - [ ] Add failing tests proving separate Worker requests retain a lease, sibling leases survive one release, long-lived operations can renew, and malformed authenticated input returns `400`.
-- [ ] Run `npm test --workspace @model-router/coordinator -- --run` and confirm failures are caused by the per-request `Map`, single-key lease model, and uncaught parsing.
+- [ ] Run `npm test --workspace @agent-router/coordinator -- --run` and confirm failures are caused by the per-request `Map`, single-key lease model, and uncaught parsing.
 - [ ] Implement the repository interface, D1 SQL operations, unique `(account_fingerprint, lease_id)` rows, safe decoding/JSON validation, and fail-closed Worker binding checks.
 - [ ] Re-run the coordinator tests until green, then refactor only while they remain green.
 - [ ] Commit coordinator persistence as one reviewable change.
@@ -60,7 +60,7 @@
 - Consumes: coordinator endpoints from Task 1.
 
 - [ ] Add failing tests for non-2xx status rejection, trailing-slash normalization, two overlapping operations, periodic renewal beyond one TTL, and diagnostic redaction.
-- [ ] Run `npm test --workspace @model-router/hermes-heartbeat -- --run` and confirm each test fails for the audited behavior.
+- [ ] Run `npm test --workspace @agent-router/hermes-heartbeat -- --run` and confirm each test fails for the audited behavior.
 - [ ] Implement URL normalization, status-only sanitized errors, unique lease handles, renewal scheduling, isolated release, and cleanup in `finally`.
 - [ ] Re-run heartbeat tests until green and confirm provider operations remain non-fatal when heartbeat operations fail.
 - [ ] Commit the heartbeat lifecycle change.

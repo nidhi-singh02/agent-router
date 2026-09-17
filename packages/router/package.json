@@ -1,5 +1,5 @@
 {
-  "name": "@model-router/router",
+  "name": "@agent-router/router",
   "version": "0.1.0",
   "type": "module",
   "exports": {
@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",
-    "@model-router/hermes-heartbeat": "*",
+    "@agent-router/hermes-heartbeat": "*",
     "better-sqlite3": "^13.0.3",
     "commander": "^15.0.0",
     "zod": "^4.6.5"

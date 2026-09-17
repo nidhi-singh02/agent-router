@@ -1,1 +1,1 @@
-export const packageName = "@model-router/router";
+export const packageName = "@agent-router/router";

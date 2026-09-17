@@ -37,7 +37,7 @@
 - [ ] Add npm workspaces for `packages/*`.
 - [ ] Pin Node.js to `>=20` and add scripts: `build`, `test`, `test:watch`, `typecheck`, `lint`, `format:check`, and `verify`.
 - [ ] Install runtime and development dependencies declared in the tech stack.
-- [ ] Add the smallest compile target exporting `@model-router/router`.
+- [ ] Add the smallest compile target exporting `@agent-router/router`.
 - [ ] Run `npm run verify` and confirm the empty foundation passes.
 - [ ] Commit: `chore: initialize model router workspace`
 
