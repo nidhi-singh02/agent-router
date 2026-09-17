@@ -2,7 +2,8 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createProgram } from "../../src/cli.js";
+import { createProgram, runCli } from "../../src/cli.js";
+import { UsageSnapshotSchema } from "../../src/domain/usage.js";
 import { formatError } from "../../src/presentation/errors.js";
 import { formatStatus } from "../../src/commands/status.js";
 
@@ -80,6 +81,75 @@ describe("router status", () => {
   it("redacts secrets in error output", () => {
     expect(formatError(new Error("auth failed Bearer sk-secret-123"))).not.toContain(
       "sk-secret-123",
+    );
+  });
+});
+
+describe("router status quota", () => {
+  it("prints each account's quota from its usage collectors", async () => {
+    const home = homeWithConfig({
+      accounts: [
+        {
+          id: "acct_personal_cursor",
+          label: "personal cursor",
+          provider: "cursor",
+          agent: "cursor",
+          ownership: "personal",
+          collectorPreference: ["local-session"],
+          enabledModels: ["cursor:composer-2.5"],
+          enabled: true,
+        },
+        {
+          id: "acct_personal_codex",
+          label: "personal codex",
+          provider: "openai",
+          agent: "codex",
+          ownership: "personal",
+          collectorPreference: ["official-cli"],
+          enabledModels: ["openai:gpt-5.5"],
+          enabled: true,
+        },
+      ],
+    });
+    let out = "";
+    const code = await runCli(["node", "router", "status"], {
+      stdout: {
+        write(chunk: string) {
+          out += chunk;
+          return true;
+        },
+      },
+      env: { MODEL_ROUTER_HOME: home },
+      collectUsage: async (account) =>
+        account.agent === "cursor"
+          ? UsageSnapshotSchema.parse({
+              accountId: account.id,
+              windows: [
+                { kind: "monthly", pool: "spend", remainingRatio: 0 },
+                { kind: "monthly", pool: "auto", remainingRatio: 0.8 },
+              ],
+              collectedAt: "2026-09-17T09:58:25.000Z",
+              source: "local-session",
+              certainty: "estimated",
+              expiresAt: "2026-09-17T10:05:00.000Z",
+              activeReservationRatio: 0,
+            })
+          : UsageSnapshotSchema.parse({
+              accountId: account.id,
+              windows: [{ kind: "five-hour" }],
+              collectedAt: "2026-09-17T09:58:25.000Z",
+              source: "none",
+              certainty: "unknown",
+              expiresAt: "2026-09-17T10:05:00.000Z",
+              activeReservationRatio: 0,
+            }),
+    });
+    expect(code).toBe(0);
+    expect(out).toContain(
+      "acct_personal_cursor (personal)  quota: spend 0% left, auto 80% left (estimated local-session, as of 2026-09-17T09:58:25.000Z)",
+    );
+    expect(out).toContain(
+      "acct_personal_codex (personal)  quota: unknown (no collector returned usage)",
     );
   });
 });

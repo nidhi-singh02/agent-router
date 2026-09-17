@@ -7,6 +7,7 @@ import { revalidateDecision } from "../policy/revalidate.js";
 import { decideRoute } from "../semantic/decision-engine.js";
 import type { TypeSafePort } from "../semantic/typesafe-client.js";
 import { formatDecisionCard } from "../presentation/decision-card.js";
+import { formatPoolQuota } from "../presentation/quota.js";
 import { launchRoutedAgent } from "../launch/herdr-launcher.js";
 import type { HerdrClient } from "../launch/herdr-client.js";
 import { buildHandoff, serializeHandoff } from "../handoff/handoff-builder.js";
@@ -222,6 +223,7 @@ export async function executeRun(
       : snapshot.source === "none"
         ? "unknown (no collector returned usage)"
         : `${snapshot.certainty} ${snapshot.source}`,
+    quota: snapshot ? formatPoolQuota(snapshot, selected.model.quotaPool) : undefined,
     freshness: snapshot ? `refreshed at ${snapshot.collectedAt}` : undefined,
     reset: snapshot?.windows.find((window) => window.resetsAt)?.resetsAt,
   });

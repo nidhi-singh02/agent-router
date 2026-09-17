@@ -83,6 +83,26 @@ There is no `router accounts add` command. Add accounts by editing the `accounts
 Run `router accounts` to confirm the file parses and lists every account. See
 `docs/configuration.md` for the full schema.
 
+## Cursor quota
+
+The Cursor CLI does not report plan usage, so the router reads it from
+`~/.cursor/statusline-quota-cache.json`. That file is written by a Cursor agent status line
+script (`statusLine` in `~/.cursor/cli-config.json`) and must contain:
+
+```json
+{ "pct": 0, "auto_left": 80, "at": 1789643962.29 }
+```
+
+- `pct`: percent of included spend left. Grok models check this `spend` pool.
+- `auto_left`: percent of the Auto pool left. Composer checks this `auto` pool.
+- `at`: Unix time in seconds when the quota was read.
+
+Enable it with `"local-session"` in the Cursor account's `collectorPreference`. The router
+never reads the Cursor auth token. Data older than 15 minutes counts as unknown, and the
+file only refreshes while a Cursor agent session redraws its status line. A model whose
+pool has 0% left is excluded with `quota-exhausted`, and `router status` shows each
+account's quota.
+
 ## Commands
 
 ```sh

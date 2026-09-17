@@ -21,6 +21,8 @@ export const ModelProfileSchema = z.object({
   capabilities: ModelCapabilitiesSchema,
   relativeQuotaCost: z.number().positive(),
   relativeLatency: z.number().positive(),
+  // The provider quota pool this model draws from; matches UsageWindow.pool.
+  quotaPool: z.string().min(1).optional(),
 });
 
 export type ReasoningEffort = z.infer<typeof ReasoningEffortSchema>;

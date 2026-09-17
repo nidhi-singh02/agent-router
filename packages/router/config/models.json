@@ -16,7 +16,8 @@
         "research": 0.7
       },
       "relativeQuotaCost": 1,
-      "relativeLatency": 1
+      "relativeLatency": 1,
+      "quotaPool": "spend"
     },
     {
       "id": "cursor:grok-4.5",
@@ -32,7 +33,8 @@
         "research": 0.65
       },
       "relativeQuotaCost": 1,
-      "relativeLatency": 1
+      "relativeLatency": 1,
+      "quotaPool": "spend"
     },
     {
       "id": "cursor:composer-2.5",
@@ -48,7 +50,8 @@
         "research": 0.55
       },
       "relativeQuotaCost": 0.5,
-      "relativeLatency": 0.5
+      "relativeLatency": 0.5,
+      "quotaPool": "auto"
     },
     {
       "id": "anthropic:claude-sonnet",

@@ -14,6 +14,8 @@ export const UsageCertaintySchema = z.enum(["exact", "estimated", "unknown"]);
 
 export const UsageWindowSchema = z.object({
   kind: UsageWindowKindSchema,
+  // Names a provider quota pool (for example Cursor "spend" or "auto"); unpooled windows apply to every model.
+  pool: z.string().min(1).optional(),
   remainingRatio: RatioSchema.optional(),
   usedRatio: RatioSchema.optional(),
   resetsAt: z.iso.datetime().optional(),

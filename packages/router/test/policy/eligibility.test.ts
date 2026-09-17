@@ -115,6 +115,45 @@ describe("eligibility", () => {
     expect(result.projectedRemainingRatio).toBeCloseTo(0.15);
   });
 
+  it("excludes a personal account whose model pool is exhausted and keeps other pools", () => {
+    const pooledUsage = usage(undefined, {
+      accountId: personal.id,
+      certainty: "estimated",
+      windows: [
+        { kind: "monthly", pool: "spend", remainingRatio: 0 },
+        { kind: "monthly", pool: "auto", remainingRatio: 0.8 },
+      ],
+    });
+    const spendModel = ModelProfileSchema.parse({ ...model, quotaPool: "spend" });
+    const autoModel = ModelProfileSchema.parse({
+      ...model,
+      id: "cursor:composer-2.5",
+      launchName: "composer-2.5",
+      quotaPool: "auto",
+    });
+    const account = AccountSchema.parse({
+      ...personal,
+      enabledModels: ["cursor:grok-4.6", "cursor:composer-2.5"],
+    });
+    const spend = evaluateEligibility({
+      account,
+      model: spendModel,
+      usage: pooledUsage,
+      estimatedCostRatio: 0.02,
+      now,
+    });
+    expect(spend).toMatchObject({ eligible: false, reason: "quota-exhausted" });
+    const auto = evaluateEligibility({
+      account,
+      model: autoModel,
+      usage: pooledUsage,
+      estimatedCostRatio: 0.02,
+      now,
+    });
+    expect(auto.eligible).toBe(true);
+    expect(auto.projectedRemainingRatio).toBeCloseTo(0.78);
+  });
+
   it("excludes unknown or stale shared usage by default", () => {
     const unknown = evaluateEligibility({
       account: shared,
