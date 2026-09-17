@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createProgram } from "../../src/cli.js";
 import { executeRun } from "../../src/commands/run.js";
+import { collectUsageChain } from "../../src/collectors/collector-chain.js";
 import { createHerdrClient } from "../../src/launch/herdr-client.js";
 import {
   claudeModel,
@@ -220,5 +221,24 @@ describe("router run", () => {
     expect(payload.phase).toBe("implementation");
     expect(payload.task).toMatch(/Implement the approved plan/);
     expect(payload.constraints).toContain("Do not deploy or consume extra quota.");
+  });
+
+  it("labels usage as unknown when no collector returned usage", async () => {
+    const usage = await collectUsageChain(personal, []);
+    const result = await executeRun(
+      "Implement the approved plan.",
+      { dryRun: true },
+      {
+        accounts: [personal],
+        models: [cursorModel],
+        usage: { [personal.id]: usage },
+        client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
+        env: {},
+        now: new Date(),
+      },
+    );
+    expect(result.code).toBe(0);
+    expect(result.output).toContain("Usage source: unknown (no collector returned usage)");
+    expect(result.output).not.toMatch(/Usage source:.*browser-dashboard/);
   });
 });

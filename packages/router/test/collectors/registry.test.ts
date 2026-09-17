@@ -20,6 +20,47 @@ describe("collector registry", () => {
     );
   });
 
+  it("skips the OpenCode local-session collector for non-OpenCode accounts", () => {
+    const account = {
+      ...personal,
+      collectorPreference: ["official-cli", "local-session", "browser-dashboard"] as const,
+    };
+    expect(collectorsForAccount(account).map((collector) => collector.kind)).toEqual([
+      "official-cli",
+      "browser-dashboard",
+    ]);
+  });
+
+  it("uses the OpenCode local-session collector for the OpenCode CLI", () => {
+    const account = {
+      ...personal,
+      agent: "opencode" as const,
+      collectorPreference: ["local-session"] as const,
+    };
+    expect(collectorsForAccount(account).map((collector) => collector.kind)).toEqual([
+      "local-session",
+    ]);
+  });
+
+  it("uses the OpenCode local-session collector for OpenCode models in another harness", () => {
+    const viaModel = {
+      ...personal,
+      collectorPreference: ["local-session"] as const,
+      enabledModels: ["opencode:grok-code"] as unknown as typeof personal.enabledModels,
+    };
+    const viaProvider = {
+      ...personal,
+      provider: "opencode" as typeof personal.provider,
+      collectorPreference: ["local-session"] as const,
+    };
+    expect(collectorsForAccount(viaModel).map((collector) => collector.kind)).toEqual([
+      "local-session",
+    ]);
+    expect(collectorsForAccount(viaProvider).map((collector) => collector.kind)).toEqual([
+      "local-session",
+    ]);
+  });
+
   it("parses dashboard HTML only through an explicit approved browser bridge", async () => {
     const collector = createBrowserDashboardCollector({
       approvedBridge: true,

@@ -25,6 +25,16 @@ function officialCollector(account: Account, run: typeof runCommand): UsageColle
   return createCursorCollector(run);
 }
 
+// The local-session collector reads OpenCode state, so it only applies to the OpenCode CLI
+// or to OpenCode models used from another harness.
+export function usesOpenCode(account: Account): boolean {
+  return (
+    account.agent === "opencode" ||
+    account.provider === "opencode" ||
+    account.enabledModels.some((modelId) => modelId.startsWith("opencode:"))
+  );
+}
+
 export function collectorsForAccount(
   account: Account,
   options: CollectorRegistryOptions = {},
@@ -32,13 +42,13 @@ export function collectorsForAccount(
   const run = options.runCommand ?? runCommand;
   const browser =
     options.browserCollector ?? createBrowserDashboardCollector({ approvedBridge: false });
-  return account.collectorPreference.map((kind) => {
+  return account.collectorPreference.flatMap((kind) => {
     if (kind === "official-cli" || kind === "official-api") {
-      return officialCollector(account, run);
+      return [officialCollector(account, run)];
     }
     if (kind === "local-session") {
-      return opencodeCollector;
+      return usesOpenCode(account) ? [opencodeCollector] : [];
     }
-    return browser;
+    return [browser];
   });
 }

@@ -19,16 +19,20 @@ export const UsageWindowSchema = z.object({
   resetsAt: z.iso.datetime().optional(),
 });
 
+// "none" marks the fallback snapshot when no collector returned usage.
+export const UsageSourceSchema = z.union([CollectorKindSchema, z.literal("none")]);
+
 export const UsageSnapshotSchema = z.object({
   accountId: AccountIdSchema,
   windows: z.array(UsageWindowSchema).min(1),
   collectedAt: z.iso.datetime(),
-  source: CollectorKindSchema,
+  source: UsageSourceSchema,
   certainty: UsageCertaintySchema,
   expiresAt: z.iso.datetime(),
   activeReservationRatio: RatioSchema,
 });
 
+export type UsageSource = z.infer<typeof UsageSourceSchema>;
 export type UsageWindowKind = z.infer<typeof UsageWindowKindSchema>;
 export type UsageCertainty = z.infer<typeof UsageCertaintySchema>;
 export type UsageWindow = z.infer<typeof UsageWindowSchema>;
