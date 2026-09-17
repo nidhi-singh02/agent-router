@@ -192,13 +192,13 @@ describe("herdr launcher", () => {
     },
   );
 
-  it("sends the handoff without waiting for the agent to finish its turn", async () => {
+  it("waits for startup to settle, then confirms the agent picked up the handoff", async () => {
     const calls: string[][] = [];
     const herdr = createHerdrClient(async (argv) => {
       calls.push([...argv]);
       return { ok: true, code: 0, stdout: "w1:p9\n", stderr: "" };
     });
-    await launchRoutedAgent({
+    const result = await launchRoutedAgent({
       env: { HERDR_ENV: "1" },
       agent: "codex",
       launchName: "gpt-5.6-terra",
@@ -207,10 +207,96 @@ describe("herdr launcher", () => {
       dryRun: false,
       herdr,
     });
-    const prompt = calls.find((argv) => argv[1] === "agent" && argv[2] === "prompt");
-    expect(prompt?.slice(0, 3)).toEqual(["herdr", "agent", "prompt"]);
-    expect(prompt?.[3]).toMatch(/^router-codex-[0-9a-f]{6}$/);
-    expect(prompt?.slice(4)).toEqual(["task"]);
+    expect(result.ok).toBe(true);
+    const name = result.agentName!;
+    expect(name).toMatch(/^router-codex-[0-9a-f]{6}$/);
+    const agentCalls = calls.filter((argv) => argv[1] === "agent").map((argv) => argv[2]);
+    expect(agentCalls).toEqual(["start", "wait", "prompt"]);
+    expect(calls.find((argv) => argv[2] === "wait")).toEqual([
+      "herdr",
+      "agent",
+      "wait",
+      name,
+      "--timeout",
+      "30000",
+    ]);
+    expect(calls.find((argv) => argv[2] === "prompt")).toEqual([
+      "herdr",
+      "agent",
+      "prompt",
+      name,
+      "task",
+      "--wait",
+      "--until",
+      "working",
+      "--until",
+      "blocked",
+      "--timeout",
+      "30000",
+    ]);
+  });
+
+  it("reports a handoff the agent never picked up and keeps the agent pane", async () => {
+    const calls: string[][] = [];
+    const herdr = createHerdrClient(async (argv) => {
+      calls.push([...argv]);
+      if (argv[2] === "prompt") {
+        return {
+          ok: false,
+          code: 1,
+          stdout: "",
+          stderr: JSON.stringify({
+            error: { code: "agent_prompt_stalled", message: "no activity observed" },
+          }),
+        };
+      }
+      return { ok: true, code: 0, stdout: "w1:p9\n", stderr: "" };
+    });
+    const result = await launchRoutedAgent({
+      env: { HERDR_ENV: "1" },
+      agent: "codex",
+      launchName: "gpt-5.6-terra",
+      effort: "low",
+      handoff: "task",
+      dryRun: false,
+      herdr,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe(
+      `handoff not received by agent ${result.agentName} in pane w1:p9 (agent_prompt_stalled: no activity observed); paste the task there or retry`,
+    );
+    expect(result.paneId).toBe("w1:p9");
+    expect(calls.some((argv) => argv[2] === "close")).toBe(false);
+    expect(calls.filter((argv) => argv[2] === "prompt")).toHaveLength(1);
+  });
+
+  it("reports an agent that never finished starting without sending the handoff", async () => {
+    const calls: string[][] = [];
+    const herdr = createHerdrClient(async (argv) => {
+      calls.push([...argv]);
+      if (argv[2] === "wait") {
+        return {
+          ok: false,
+          code: 1,
+          stdout: JSON.stringify({ error: { code: "timeout", message: "timed out" } }),
+          stderr: "",
+        };
+      }
+      return { ok: true, code: 0, stdout: "w1:p9\n", stderr: "" };
+    });
+    const result = await launchRoutedAgent({
+      env: { HERDR_ENV: "1" },
+      agent: "codex",
+      launchName: "gpt-5.6-terra",
+      effort: "low",
+      handoff: "task",
+      dryRun: false,
+      herdr,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("herdr agent wait failed: timeout: timed out");
+    expect(result.paneId).toBe("w1:p9");
+    expect(calls.some((argv) => argv[2] === "prompt")).toBe(false);
   });
 
   it("reports Herdr JSON errors written to stdout", async () => {

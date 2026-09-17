@@ -69,4 +69,36 @@ describe("herdr command adapter", () => {
     await herdr.closePane("w1:p9");
     expect(calls).toEqual([["herdr", "pane", "close", "w1:p9"]]);
   });
+
+  it("waits for an agent state with a timeout", async () => {
+    const calls: string[][] = [];
+    const herdr = createHerdrClient(async (argv) => {
+      calls.push([...argv]);
+      return { ok: true, code: 0, stdout: "", stderr: "" };
+    });
+    await herdr.waitFor({ target: "router-codex-abc123", timeoutMs: 30000 });
+    await herdr.prompt({
+      target: "router-codex-abc123",
+      text: "task",
+      until: ["working", "blocked"],
+      timeoutMs: 5000,
+    });
+    expect(calls).toEqual([
+      ["herdr", "agent", "wait", "router-codex-abc123", "--timeout", "30000"],
+      [
+        "herdr",
+        "agent",
+        "prompt",
+        "router-codex-abc123",
+        "task",
+        "--wait",
+        "--until",
+        "working",
+        "--until",
+        "blocked",
+        "--timeout",
+        "5000",
+      ],
+    ]);
+  });
 });
