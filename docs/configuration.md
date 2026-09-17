@@ -1,6 +1,9 @@
 # Configuration
 
-Local state lives under the platform config directory, or `MODEL_ROUTER_HOME`.
+Local state lives under `MODEL_ROUTER_HOME` when it is set, otherwise the platform config
+directory: `~/Library/Application Support/model-router` on macOS,
+`$XDG_CONFIG_HOME/model-router` (default `~/.config/model-router`) on Linux, and
+`%APPDATA%\model-router` on Windows.
 
 `MODEL_ROUTER_HOME/config.json` example:
 

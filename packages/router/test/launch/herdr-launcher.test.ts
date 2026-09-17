@@ -238,9 +238,11 @@ describe("herdr launcher", () => {
 
   it("reports a handoff the agent never picked up and keeps the agent pane", async () => {
     const calls: string[][] = [];
+    let prompted = false;
     const herdr = createHerdrClient(async (argv) => {
       calls.push([...argv]);
       if (argv[2] === "prompt") {
+        prompted = true;
         return {
           ok: false,
           code: 1,
@@ -248,6 +250,15 @@ describe("herdr launcher", () => {
           stderr: JSON.stringify({
             error: { code: "agent_prompt_stalled", message: "no activity observed" },
           }),
+        };
+      }
+      // The confirming wait after a stall finds no activity either.
+      if (argv[2] === "wait" && prompted) {
+        return {
+          ok: false,
+          code: 1,
+          stdout: JSON.stringify({ error: { code: "timeout", message: "timed out" } }),
+          stderr: "",
         };
       }
       return { ok: true, code: 0, stdout: "w1:p9\n", stderr: "" };
@@ -268,6 +279,52 @@ describe("herdr launcher", () => {
     expect(result.paneId).toBe("w1:p9");
     expect(calls.some((argv) => argv[2] === "close")).toBe(false);
     expect(calls.filter((argv) => argv[2] === "prompt")).toHaveLength(1);
+  });
+
+  it("treats a stalled prompt as launched when the agent starts working just after", async () => {
+    const calls: string[][] = [];
+    let prompted = false;
+    const herdr = createHerdrClient(async (argv) => {
+      calls.push([...argv]);
+      if (argv[2] === "prompt") {
+        prompted = true;
+        return {
+          ok: false,
+          code: 1,
+          stdout: "",
+          stderr: JSON.stringify({
+            error: { code: "agent_prompt_stalled", message: "no activity observed" },
+          }),
+        };
+      }
+      return { ok: true, code: 0, stdout: "w1:p9\n", stderr: "" };
+    });
+    const result = await launchRoutedAgent({
+      env: { HERDR_ENV: "1" },
+      agent: "codex",
+      launchName: "gpt-5.6-terra",
+      effort: "low",
+      handoff: "task",
+      dryRun: false,
+      herdr,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.paneId).toBe("w1:p9");
+    expect(prompted).toBe(true);
+    expect(calls.some((argv) => argv[2] === "close")).toBe(false);
+    const confirmingWait = calls.filter((argv) => argv[2] === "wait").at(-1);
+    expect(confirmingWait).toEqual([
+      "herdr",
+      "agent",
+      "wait",
+      result.agentName,
+      "--until",
+      "working",
+      "--until",
+      "blocked",
+      "--timeout",
+      "30000",
+    ]);
   });
 
   it("reports an agent that never finished starting without sending the handoff", async () => {

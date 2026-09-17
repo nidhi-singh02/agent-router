@@ -78,8 +78,18 @@ mkdir -p .model-router
 cp config.example.json .model-router/config.json
 ```
 
-Without `MODEL_ROUTER_HOME`, the router uses `~/Library/Application Support/model-router`
-on macOS (`~/.config/model-router` elsewhere).
+`MODEL_ROUTER_HOME` overrides the location on every platform. Without it the router uses the
+platform config directory:
+
+| Platform | Default home                                                   |
+| -------- | -------------------------------------------------------------- |
+| macOS    | `~/Library/Application Support/model-router`                   |
+| Linux    | `$XDG_CONFIG_HOME/model-router`, else `~/.config/model-router` |
+| Windows  | `%APPDATA%\model-router`                                       |
+
+The router reads `config.json` from that directory. A missing file is treated as an empty
+account list, so an unexpectedly empty `router status` usually means the home is not where you
+think it is.
 
 ### 4. Store the TypeSafe key in the macOS Keychain
 
