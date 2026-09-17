@@ -1,0 +1,49 @@
+{
+  "cases": [
+    {
+      "id": "planning",
+      "task": "Draft an architecture for the model router before any code is written.",
+      "expectedFamily": "planning"
+    },
+    {
+      "id": "specification",
+      "task": "Turn the approved product intent into a precise implementation spec.",
+      "expectedFamily": "specification"
+    },
+    {
+      "id": "implementation",
+      "task": "Implement the already approved plan for the session repository.",
+      "expectedFamily": "implementation"
+    },
+    {
+      "id": "debugging",
+      "task": "The quota tests fail because shared remaining is slightly below the reserve.",
+      "expectedFamily": "debugging"
+    },
+    {
+      "id": "review",
+      "task": "Review the pull request for privacy leaks in heartbeat payloads.",
+      "expectedFamily": "review"
+    },
+    {
+      "id": "creative-ideation",
+      "task": "Brainstorm names and a visual identity for the router decision card.",
+      "expectedFamily": "creative-ideation"
+    },
+    {
+      "id": "metadata",
+      "task": "Write a YouTube title and description for a demo of the router CLI.",
+      "expectedFamily": "metadata"
+    },
+    {
+      "id": "research",
+      "task": "Compare how Cursor, Claude Code, and Codex expose remaining quota in their CLIs.",
+      "expectedFamily": "research"
+    },
+    {
+      "id": "routine-transformation",
+      "task": "Rename the field remainingRatio across the repository using the approved spec.",
+      "expectedFamily": "routine-transformation"
+    }
+  ]
+}
