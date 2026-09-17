@@ -123,6 +123,18 @@ describe("createDefaultRunDeps", () => {
     expect(deps.herdr).toBe(herdr);
   });
 
+  it("skips every usage collector when skipUsage is set", async () => {
+    const collectorsForAccount = vi.fn(() => idleCollectors);
+    const deps = await createDefaultRunDeps(
+      { MODEL_ROUTER_HOME: homeWithAccount() },
+      { collectorsForAccount, skipUsage: true },
+    );
+    expect(collectorsForAccount).not.toHaveBeenCalled();
+    const usage = deps.usage[personal.id];
+    expect(usage).toMatchObject({ source: "skipped", certainty: "unknown" });
+    expect(Date.parse(usage!.expiresAt)).toBeGreaterThan(Date.now());
+  });
+
   it("runs configured collector chains instead of fabricating unknown snapshots", async () => {
     const snapshot = usageFor(personal.id, 0.77);
     const collectUsage = vi.fn(async () => snapshot);

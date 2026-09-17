@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { createProgram } from "../../src/cli.js";
+import { createProgram, runCli } from "../../src/cli.js";
 import { executeRun } from "../../src/commands/run.js";
 import { collectUsageChain } from "../../src/collectors/collector-chain.js";
 import { createHerdrClient } from "../../src/launch/herdr-client.js";
@@ -274,5 +274,58 @@ describe("router run", () => {
     expect(result.code).toBe(0);
     expect(result.output).toContain("Usage source: estimated local-session");
     expect(result.output).toContain("Quota: auto 80% left (spend 0% left)");
+  });
+
+  it("labels skipped usage in the card and still routes a personal account", async () => {
+    const result = await executeRun(
+      "Implement the approved plan.",
+      { dryRun: true },
+      {
+        accounts: [personal],
+        models: [cursorModel],
+        usage: {
+          [personal.id]: usageFor(personal.id, 0, {
+            windows: [{ kind: "five-hour" }],
+            source: "skipped",
+            certainty: "unknown",
+            expiresAt: "2026-09-17T10:00:00.000Z",
+          }),
+        },
+        client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
+        env: {},
+        now,
+      },
+    );
+    expect(result.code).toBe(0);
+    expect(result.output).toContain("Usage source: skipped (run with --usage to check quota)");
+    expect(result.output).not.toContain("Quota:");
+  });
+
+  it("skips usage by default and collects it only with --usage", async () => {
+    const createRunDeps = vi.fn(async () => ({
+      accounts: [],
+      models: [],
+      usage: {},
+      client: fakeTypeSafe({}),
+      env: {},
+    }));
+    const home = mkdtempSync(path.join(os.tmpdir(), "router-no-usage-"));
+    const silent = { write: () => true };
+    await runCli(["node", "router", "run", "task", "--dry-run"], {
+      stdout: silent,
+      stderr: silent,
+      env: { MODEL_ROUTER_HOME: home },
+      createRunDeps,
+    });
+    await runCli(["node", "router", "run", "task", "--dry-run", "--usage"], {
+      stdout: silent,
+      stderr: silent,
+      env: { MODEL_ROUTER_HOME: home },
+      createRunDeps,
+    });
+    expect(createRunDeps.mock.calls.map((call) => (call as unknown[])[1])).toEqual([
+      { skipUsage: true },
+      { skipUsage: false },
+    ]);
   });
 });

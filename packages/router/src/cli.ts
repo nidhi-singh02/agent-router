@@ -31,6 +31,7 @@ export interface CliOptions {
   run?: typeof executeRun;
   runDeps?: RunDeps;
   collectUsage?: (account: Account) => Promise<UsageSnapshot>;
+  createRunDeps?: typeof createDefaultRunDeps;
 }
 
 export function createProgram(options: CliOptions = {}): Command & { exitCode?: number } {
@@ -63,12 +64,20 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
     .argument("<task>")
     .option("--dry-run", "Print the route without launching", false)
     .option("--json", "Emit JSON for plugins", false)
-    .action(async (task: string, flags: { dryRun?: boolean; json?: boolean }) => {
+    .option(
+      "--usage",
+      "Check quota before routing (slower; without it shared accounts are excluded)",
+      false,
+    )
+    .action(async (task: string, flags: { dryRun?: boolean; json?: boolean; usage?: boolean }) => {
       try {
         const result = await (options.run ?? executeRun)(
           task,
           { dryRun: Boolean(flags.dryRun) },
-          options.runDeps ?? (await createDefaultRunDeps(env)),
+          options.runDeps ??
+            (await (options.createRunDeps ?? createDefaultRunDeps)(env, {
+              skipUsage: !flags.usage,
+            })),
         );
         stdout.write(`${flags.json ? JSON.stringify(result.json) : result.output}\n`);
         program.exitCode = result.code;
@@ -77,25 +86,32 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
         program.exitCode = 1;
       }
     });
-  program.command("status").action(async () => {
-    try {
-      const config = loadConfig({ env });
-      const collect =
-        options.collectUsage ??
-        ((account: Account) => collectUsageChain(account, collectorsForAccount(account)));
-      const snapshots = await Promise.all(config.accounts.map((account) => collect(account)));
-      const quota = Object.fromEntries(
-        config.accounts.map((account, index) => [
-          account.id,
-          formatAccountQuota(snapshots[index]!),
-        ]),
-      );
-      stdout.write(`${formatStatus({ accounts: config.accounts, quota })}\n`);
-    } catch (error) {
-      stderr.write(`${formatError(error)}\n`);
-      program.exitCode = 1;
-    }
-  });
+  program
+    .command("status")
+    .option("--usage", "Show each account's quota (slower)", false)
+    .action(async (flags: { usage?: boolean }) => {
+      try {
+        const config = loadConfig({ env });
+        if (!flags.usage) {
+          stdout.write(`${formatStatus({ accounts: config.accounts })}\n`);
+          return;
+        }
+        const collect =
+          options.collectUsage ??
+          ((account: Account) => collectUsageChain(account, collectorsForAccount(account)));
+        const snapshots = await Promise.all(config.accounts.map((account) => collect(account)));
+        const quota = Object.fromEntries(
+          config.accounts.map((account, index) => [
+            account.id,
+            formatAccountQuota(snapshots[index]!),
+          ]),
+        );
+        stdout.write(`${formatStatus({ accounts: config.accounts, quota })}\n`);
+      } catch (error) {
+        stderr.write(`${formatError(error)}\n`);
+        program.exitCode = 1;
+      }
+    });
   program
     .command("session")
     .argument("[id]", "Session id (defaults to the latest session)")

@@ -1,7 +1,7 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createProgram, runCli } from "../../src/cli.js";
 import { UsageSnapshotSchema } from "../../src/domain/usage.js";
 import { formatError } from "../../src/presentation/errors.js";
@@ -112,7 +112,7 @@ describe("router status quota", () => {
       ],
     });
     let out = "";
-    const code = await runCli(["node", "router", "status"], {
+    const code = await runCli(["node", "router", "status", "--usage"], {
       stdout: {
         write(chunk: string) {
           out += chunk;
@@ -151,5 +151,37 @@ describe("router status quota", () => {
     expect(out).toContain(
       "acct_personal_codex (personal)  quota: unknown (no collector returned usage)",
     );
+  });
+
+  it("skips quota collection by default", async () => {
+    const home = homeWithConfig({
+      accounts: [
+        {
+          id: "acct_personal_cursor",
+          label: "personal cursor",
+          provider: "cursor",
+          agent: "cursor",
+          ownership: "personal",
+          collectorPreference: ["local-session"],
+          enabledModels: ["cursor:composer-2.5"],
+          enabled: true,
+        },
+      ],
+    });
+    let out = "";
+    const collectUsage = vi.fn();
+    const code = await runCli(["node", "router", "status"], {
+      stdout: {
+        write(chunk: string) {
+          out += chunk;
+          return true;
+        },
+      },
+      env: { MODEL_ROUTER_HOME: home },
+      collectUsage,
+    });
+    expect(code).toBe(0);
+    expect(collectUsage).not.toHaveBeenCalled();
+    expect(out.trim()).toBe("acct_personal_cursor (personal)");
   });
 });

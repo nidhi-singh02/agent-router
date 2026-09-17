@@ -21,8 +21,12 @@ export const UsageWindowSchema = z.object({
   resetsAt: z.iso.datetime().optional(),
 });
 
-// "none" marks the fallback snapshot when no collector returned usage.
-export const UsageSourceSchema = z.union([CollectorKindSchema, z.literal("none")]);
+// "none": no collector returned usage. "skipped": usage collection was not requested (no --usage).
+export const UsageSourceSchema = z.union([
+  CollectorKindSchema,
+  z.literal("none"),
+  z.literal("skipped"),
+]);
 
 export const UsageSnapshotSchema = z.object({
   accountId: AccountIdSchema,

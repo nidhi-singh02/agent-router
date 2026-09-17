@@ -83,11 +83,18 @@ There is no `router accounts add` command. Add accounts by editing the `accounts
 Run `router accounts` to confirm the file parses and lists every account. See
 `docs/configuration.md` for the full schema.
 
-## Cursor quota
+## Quota from status lines
 
-The Cursor CLI does not report plan usage, so the router reads it from
-`~/.cursor/statusline-quota-cache.json`. That file is written by a Cursor agent status line
-script (`statusLine` in `~/.cursor/cli-config.json`) and must contain:
+The Cursor and Claude Code CLIs do not report plan usage on the command line. The router
+reads quota from small cache files that each tool's status line script writes. Enable it with
+`"local-session"` in the account's `collectorPreference`. The router never reads auth
+tokens. Data older than 15 minutes counts as unknown, and a cache only refreshes while a
+session of that tool redraws its status line. Usage checks run only with `--usage` (see below).
+
+### Cursor
+
+`~/.cursor/statusline-quota-cache.json`, written by a Cursor agent status line script
+(`statusLine` in `~/.cursor/cli-config.json`):
 
 ```json
 { "pct": 0, "auto_left": 80, "at": 1789643962.29 }
@@ -97,17 +104,37 @@ script (`statusLine` in `~/.cursor/cli-config.json`) and must contain:
 - `auto_left`: percent of the Auto pool left. Composer checks this `auto` pool.
 - `at`: Unix time in seconds when the quota was read.
 
-Enable it with `"local-session"` in the Cursor account's `collectorPreference`. The router
-never reads the Cursor auth token. Data older than 15 minutes counts as unknown, and the
-file only refreshes while a Cursor agent session redraws its status line. A model whose
-pool has 0% left is excluded with `quota-exhausted`, and `router status` shows each
-account's quota.
+### Claude Code
+
+`~/.claude/statusline-quota-cache.json`, written by a Claude Code status line script
+(`statusLine` in `~/.claude/settings.json`) from the `rate_limits` it receives:
+
+```json
+{
+  "at": 1789644776.2,
+  "five_hour": { "used_percentage": 29, "resets_at": 1789659000 },
+  "seven_day": { "used_percentage": 4, "resets_at": 1790110800 }
+}
+```
+
+- `five_hour` and `seven_day`: percent used and reset time (Unix seconds). Either may be
+  missing. A window whose reset time has passed counts as fully available.
+- `at`: Unix time in seconds when the limits were written.
+
+### Usage checks are opt-in
+
+By default `router run` and `router status` skip every usage check, which keeps
+`router run --dry-run` at about 0.1 s before TypeSafe instead of about 1.2 s. Without usage,
+personal accounts still route (no quota check), shared accounts are excluded as
+`unknown-usage`, and the decision card shows
+`Usage source: skipped (run with --usage to check quota)`. Pass `--usage` to read quota,
+apply `quota-exhausted`, and show quota in `router status`.
 
 ## Commands
 
 ```sh
-router run "<task>" --dry-run
-router status
+router run "<task>" [--dry-run] [--usage] [--json]
+router status [--usage]
 router session [id] [--list] [--limit <n>] [--json]
 router accounts
 router usage refresh --dry-run
