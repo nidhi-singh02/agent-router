@@ -25,6 +25,24 @@ export function parseHerdrPaneId(stdout: string): string | undefined {
   return trimmed.split(/\s+/)[0];
 }
 
+// Herdr reports failures as JSON on stdout: {"error":{"code":"...","message":"..."}}.
+export function herdrError(result: { stdout: string; stderr: string }, action: string): string {
+  try {
+    const data = JSON.parse(result.stdout.trim()) as {
+      error?: { code?: unknown; message?: unknown };
+    };
+    const code = typeof data.error?.code === "string" ? data.error.code : undefined;
+    const message = typeof data.error?.message === "string" ? data.error.message : undefined;
+    if (code || message) {
+      return `${action}: ${[code, message].filter(Boolean).join(": ")}`;
+    }
+  } catch {
+    // Not JSON; fall back to stderr.
+  }
+  const stderr = result.stderr.trim();
+  return stderr ? `${action}: ${stderr}` : action;
+}
+
 export interface LaunchResult {
   ok: boolean;
   error?: string;
@@ -71,7 +89,7 @@ export async function launchRoutedAgent(input: {
   if (!paneId) {
     const split = await herdr.splitCurrent();
     if (!split.ok) {
-      return { ok: false, error: split.stderr || "herdr pane split failed", launchToken };
+      return { ok: false, error: herdrError(split, "herdr pane split failed"), launchToken };
     }
     paneId = parseHerdrPaneId(split.stdout);
     if (!paneId) {
@@ -84,25 +102,31 @@ export async function launchRoutedAgent(input: {
       name: `router-${input.agent}`,
       kind: herdrAgentKind(input.agent),
       paneId,
-      agentArgs: command,
+      // Herdr runs the kind's own executable; pass only its native arguments after `--`.
+      agentArgs: command.slice(1),
     });
     if (!started.ok) {
       return {
         ok: false,
-        error: started.stderr || "herdr agent start failed",
+        error: herdrError(started, "herdr agent start failed"),
         launchToken,
         paneId,
         paneCreated,
       };
     }
   }
-  const prompted = await herdr.prompt({ target: `router-${input.agent}`, text: input.handoff });
+  // Submit the handoff without --wait: waiting would block until the agent finishes its turn.
+  const prompted = await herdr.prompt({
+    target: `router-${input.agent}`,
+    text: input.handoff,
+    wait: false,
+  });
   if (!prompted.ok) {
     return {
       ok: false,
-      error: prompted.stderr.includes("agent_blocked")
+      error: `${prompted.stdout}${prompted.stderr}`.includes("agent_blocked")
         ? "agent is blocked; not resending the handoff"
-        : prompted.stderr || "herdr agent prompt failed",
+        : herdrError(prompted, "herdr agent prompt failed"),
       launchToken,
       paneId,
       paneCreated,

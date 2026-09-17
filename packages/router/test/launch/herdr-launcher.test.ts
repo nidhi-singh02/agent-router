@@ -128,4 +128,117 @@ describe("herdr launcher", () => {
     expect(result.ok).toBe(true);
     expect(result.paneId).toBe("pane_plain");
   });
+
+  it.each([
+    {
+      agent: "codex" as const,
+      launchName: "gpt-5.6-terra",
+      effort: "low" as const,
+      kind: "codex",
+      args: ["--model", "gpt-5.6-terra", "-c", 'model_reasoning_effort="low"'],
+    },
+    {
+      agent: "claude-code" as const,
+      launchName: "opus",
+      effort: "high" as const,
+      kind: "claude",
+      args: ["--model", "opus", "--effort", "high"],
+    },
+    {
+      agent: "cursor" as const,
+      launchName: "grok-4.6",
+      effort: "medium" as const,
+      kind: "cursor",
+      args: ["--model", "cursor-grok-4.6-medium"],
+    },
+    {
+      agent: "opencode" as const,
+      launchName: "openai",
+      effort: "low" as const,
+      kind: "opencode",
+      args: ["--model", "openai"],
+    },
+  ])(
+    "passes only native $agent arguments to herdr agent start",
+    async ({ agent, launchName, effort, kind, args }) => {
+      const calls: string[][] = [];
+      const herdr = createHerdrClient(async (argv) => {
+        calls.push([...argv]);
+        return { ok: true, code: 0, stdout: "w1:p9\n", stderr: "" };
+      });
+      const result = await launchRoutedAgent({
+        env: { HERDR_ENV: "1" },
+        agent,
+        launchName,
+        effort,
+        handoff: "task",
+        dryRun: false,
+        herdr,
+      });
+      expect(result.ok).toBe(true);
+      const start = calls.find((argv) => argv[1] === "agent" && argv[2] === "start");
+      expect(start).toEqual([
+        "herdr",
+        "agent",
+        "start",
+        `router-${agent}`,
+        "--kind",
+        kind,
+        "--pane",
+        "w1:p9",
+        "--",
+        ...args,
+      ]);
+    },
+  );
+
+  it("sends the handoff without waiting for the agent to finish its turn", async () => {
+    const calls: string[][] = [];
+    const herdr = createHerdrClient(async (argv) => {
+      calls.push([...argv]);
+      return { ok: true, code: 0, stdout: "w1:p9\n", stderr: "" };
+    });
+    await launchRoutedAgent({
+      env: { HERDR_ENV: "1" },
+      agent: "codex",
+      launchName: "gpt-5.6-terra",
+      effort: "low",
+      handoff: "task",
+      dryRun: false,
+      herdr,
+    });
+    const prompt = calls.find((argv) => argv[1] === "agent" && argv[2] === "prompt");
+    expect(prompt).toEqual(["herdr", "agent", "prompt", "router-codex", "task"]);
+  });
+
+  it("reports Herdr JSON errors written to stdout", async () => {
+    const herdr = createHerdrClient(async (argv) => {
+      if (argv[1] === "pane") {
+        return { ok: true, code: 0, stdout: "w1:p9\n", stderr: "" };
+      }
+      return {
+        ok: false,
+        code: 1,
+        stdout: JSON.stringify({
+          error: { code: "agent_not_ready", message: "codex did not become ready" },
+          id: "cli:agent:start",
+        }),
+        stderr: "",
+      };
+    });
+    const result = await launchRoutedAgent({
+      env: { HERDR_ENV: "1" },
+      agent: "codex",
+      launchName: "gpt-5.6-terra",
+      effort: "low",
+      handoff: "task",
+      dryRun: false,
+      herdr,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe(
+      "herdr agent start failed: agent_not_ready: codex did not become ready",
+    );
+    expect(result.paneId).toBe("w1:p9");
+  });
 });
