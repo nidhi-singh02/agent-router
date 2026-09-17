@@ -3,12 +3,7 @@ import type { ReasoningEffort } from "../domain/model-profile.js";
 
 const CLAUDE_EFFORTS = new Set<ReasoningEffort>(["low", "medium", "high"]);
 // Codex reads model_reasoning_effort from config; `none` keeps the user's Codex default.
-const CODEX_EFFORTS: Partial<Record<ReasoningEffort, string>> = {
-  low: "low",
-  medium: "medium",
-  high: "high",
-  ultra: "xhigh",
-};
+const CODEX_EFFORTS = new Set<ReasoningEffort>(["low", "medium", "high", "ultra"]);
 
 export function cursorModelId(launchName: string, effort: ReasoningEffort): string {
   if (effort === "none" || /^cursor-.+-(none|low|medium|high|ultra)$/.test(launchName)) {
@@ -39,9 +34,8 @@ export function buildAgentCommand(input: {
     }
     case "codex": {
       const args = ["codex", "--model", input.launchName];
-      const codexEffort = CODEX_EFFORTS[input.effort];
-      if (codexEffort) {
-        args.push("-c", `model_reasoning_effort="${codexEffort}"`);
+      if (CODEX_EFFORTS.has(input.effort)) {
+        args.push("-c", `model_reasoning_effort="${input.effort}"`);
       }
       return args;
     }

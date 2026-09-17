@@ -83,15 +83,79 @@
       "relativeLatency": 1.5
     },
     {
-      "id": "openai:codex",
+      "id": "openai:gpt-6-astra",
       "provider": "openai",
       "agent": "codex",
-      "launchName": "codex",
+      "launchName": "gpt-6-astra",
+      "supportedEfforts": ["low", "medium", "high", "ultra"],
+      "capabilities": {
+        "planning": 0.9,
+        "coding": 0.9,
+        "debugging": 0.9,
+        "creativity": 0.8,
+        "research": 0.9
+      },
+      "relativeQuotaCost": 3,
+      "relativeLatency": 1.5
+    },
+    {
+      "id": "openai:gpt-5.6-sol",
+      "provider": "openai",
+      "agent": "codex",
+      "launchName": "gpt-5.6-sol",
+      "supportedEfforts": ["low", "medium", "high", "ultra"],
+      "capabilities": {
+        "planning": 0.85,
+        "coding": 0.9,
+        "debugging": 0.85,
+        "creativity": 0.7,
+        "research": 0.8
+      },
+      "relativeQuotaCost": 2,
+      "relativeLatency": 1.2
+    },
+    {
+      "id": "openai:gpt-5.6-terra",
+      "provider": "openai",
+      "agent": "codex",
+      "launchName": "gpt-5.6-terra",
+      "supportedEfforts": ["low", "medium", "high", "ultra"],
+      "capabilities": {
+        "planning": 0.8,
+        "coding": 0.8,
+        "debugging": 0.8,
+        "creativity": 0.65,
+        "research": 0.75
+      },
+      "relativeQuotaCost": 1,
+      "relativeLatency": 1
+    },
+    {
+      "id": "openai:gpt-5.6-luna",
+      "provider": "openai",
+      "agent": "codex",
+      "launchName": "gpt-5.6-luna",
+      "supportedEfforts": ["low", "medium", "high"],
+      "capabilities": {
+        "planning": 0.65,
+        "coding": 0.7,
+        "debugging": 0.65,
+        "creativity": 0.55,
+        "research": 0.6
+      },
+      "relativeQuotaCost": 0.5,
+      "relativeLatency": 0.6
+    },
+    {
+      "id": "openai:gpt-5.5",
+      "provider": "openai",
+      "agent": "codex",
+      "launchName": "gpt-5.5",
       "supportedEfforts": ["low", "medium", "high"],
       "capabilities": {
         "planning": 0.7,
-        "coding": 0.8,
-        "debugging": 0.75,
+        "coding": 0.75,
+        "debugging": 0.7,
         "creativity": 0.6,
         "research": 0.65
       },

@@ -64,7 +64,7 @@ describe("official CLI collectors", () => {
       provider: "openai",
       agent: "codex",
       ownership: "personal",
-      enabledModels: ["openai:codex"],
+      enabledModels: ["openai:gpt-5.6-sol"],
     });
     const snapshot = await collector.collectUsage(account);
     expect(inspect).toHaveBeenCalledWith(
