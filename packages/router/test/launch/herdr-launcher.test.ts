@@ -177,11 +177,11 @@ describe("herdr launcher", () => {
       });
       expect(result.ok).toBe(true);
       const start = calls.find((argv) => argv[1] === "agent" && argv[2] === "start");
-      expect(start).toEqual([
+      expect(start?.[3]).toMatch(new RegExp(`^router-${kind}-[0-9a-f]{6}$`));
+      expect([...start!.slice(0, 3), ...start!.slice(4)]).toEqual([
         "herdr",
         "agent",
         "start",
-        `router-${agent}`,
         "--kind",
         kind,
         "--pane",
@@ -208,7 +208,9 @@ describe("herdr launcher", () => {
       herdr,
     });
     const prompt = calls.find((argv) => argv[1] === "agent" && argv[2] === "prompt");
-    expect(prompt).toEqual(["herdr", "agent", "prompt", "router-codex", "task"]);
+    expect(prompt?.slice(0, 3)).toEqual(["herdr", "agent", "prompt"]);
+    expect(prompt?.[3]).toMatch(/^router-codex-[0-9a-f]{6}$/);
+    expect(prompt?.slice(4)).toEqual(["task"]);
   });
 
   it("reports Herdr JSON errors written to stdout", async () => {
@@ -239,6 +241,99 @@ describe("herdr launcher", () => {
     expect(result.error).toBe(
       "herdr agent start failed: agent_not_ready: codex did not become ready",
     );
-    expect(result.paneId).toBe("w1:p9");
+  });
+
+  it("gives every launch its own Herdr agent name so the router can run repeatedly", async () => {
+    const starts: string[][] = [];
+    const prompts: string[][] = [];
+    const herdr = createHerdrClient(async (argv) => {
+      if (argv[2] === "start") starts.push([...argv]);
+      if (argv[2] === "prompt") prompts.push([...argv]);
+      return { ok: true, code: 0, stdout: "w1:p9\n", stderr: "" };
+    });
+    const launch = () =>
+      launchRoutedAgent({
+        env: { HERDR_ENV: "1" },
+        agent: "codex",
+        launchName: "gpt-5.5",
+        effort: "low",
+        handoff: "task",
+        dryRun: false,
+        herdr,
+      });
+    const first = await launch();
+    const second = await launch();
+    expect(first.ok && second.ok).toBe(true);
+    const names = starts.map((argv) => argv[3]);
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size).toBe(2);
+    for (const name of names) {
+      expect(name).toMatch(/^[a-z][a-z0-9_-]{0,31}$/);
+    }
+    expect(prompts.map((argv) => argv[3])).toEqual(names);
+    expect([first.agentName, second.agentName]).toEqual(names);
+  });
+
+  it("prompts the same agent name when retrying with an existing launch token and pane", async () => {
+    const prompts: string[][] = [];
+    const herdr = createHerdrClient(async (argv) => {
+      if (argv[2] === "prompt") prompts.push([...argv]);
+      return { ok: true, code: 0, stdout: "w1:p9\n", stderr: "" };
+    });
+    const base = {
+      env: { HERDR_ENV: "1" },
+      agent: "claude-code" as const,
+      launchName: "opus",
+      effort: "high" as const,
+      handoff: "task",
+      dryRun: false,
+      herdr,
+    };
+    const first = await launchRoutedAgent(base);
+    await launchRoutedAgent({
+      ...base,
+      existingLaunchToken: first.launchToken,
+      existingPaneId: first.paneId,
+    });
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]?.[3]).toBe(prompts[0]?.[3]);
+    expect(prompts[0]?.[3]).toMatch(/^router-claude-[0-9a-f]{6}$/);
+  });
+
+  it("closes the pane it created when the agent fails to start", async () => {
+    const calls: string[][] = [];
+    const herdr = createHerdrClient(async (argv) => {
+      calls.push([...argv]);
+      if (argv[1] === "pane" && argv[2] === "split") {
+        return { ok: true, code: 0, stdout: "w1:p9\n", stderr: "" };
+      }
+      if (argv[2] === "start") {
+        return {
+          ok: false,
+          code: 1,
+          stdout: "",
+          stderr: JSON.stringify({
+            error: { code: "agent_name_taken", message: "agent name is already used" },
+          }),
+        };
+      }
+      return { ok: true, code: 0, stdout: "", stderr: "" };
+    });
+    const result = await launchRoutedAgent({
+      env: { HERDR_ENV: "1" },
+      agent: "codex",
+      launchName: "gpt-5.5",
+      effort: "low",
+      handoff: "task",
+      dryRun: false,
+      herdr,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe(
+      "herdr agent start failed: agent_name_taken: agent name is already used",
+    );
+    expect(calls).toContainEqual(["herdr", "pane", "close", "w1:p9"]);
+    expect(result.paneId).toBeUndefined();
+    expect(calls.some((argv) => argv[2] === "prompt")).toBe(false);
   });
 });

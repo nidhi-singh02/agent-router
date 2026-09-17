@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import { redactCollectorText } from "../collectors/normalizer.js";
 import type { AgentId } from "../domain/ids.js";
 import type { ReasoningEffort } from "../domain/model-profile.js";
@@ -25,22 +26,32 @@ export function parseHerdrPaneId(stdout: string): string | undefined {
   return trimmed.split(/\s+/)[0];
 }
 
-// Herdr reports failures as JSON on stdout: {"error":{"code":"...","message":"..."}}.
+// Herdr reports failures as JSON ({"error":{"code":"...","message":"..."}}) on stdout or
+// stderr depending on the command.
 export function herdrError(result: { stdout: string; stderr: string }, action: string): string {
-  try {
-    const data = JSON.parse(result.stdout.trim()) as {
-      error?: { code?: unknown; message?: unknown };
-    };
-    const code = typeof data.error?.code === "string" ? data.error.code : undefined;
-    const message = typeof data.error?.message === "string" ? data.error.message : undefined;
-    if (code || message) {
-      return `${action}: ${[code, message].filter(Boolean).join(": ")}`;
+  for (const stream of [result.stdout, result.stderr]) {
+    try {
+      const data = JSON.parse(stream.trim()) as {
+        error?: { code?: unknown; message?: unknown };
+      };
+      const code = typeof data.error?.code === "string" ? data.error.code : undefined;
+      const message = typeof data.error?.message === "string" ? data.error.message : undefined;
+      if (code || message) {
+        return `${action}: ${[code, message].filter(Boolean).join(": ")}`;
+      }
+    } catch {
+      // Not JSON; try the next stream.
     }
-  } catch {
-    // Not JSON; fall back to stderr.
   }
   const stderr = result.stderr.trim();
   return stderr ? `${action}: ${stderr}` : action;
+}
+
+// Herdr agent names must be unique among live agents and match [a-z][a-z0-9_-]{0,31}.
+// Deriving the name from the launch token keeps each launch distinct and lets a retry reuse it.
+export function herdrAgentName(agent: AgentId, launchToken: string): string {
+  const suffix = createHash("sha256").update(launchToken).digest("hex").slice(0, 6);
+  return `router-${herdrAgentKind(agent)}-${suffix}`;
 }
 
 export interface LaunchResult {
@@ -50,6 +61,7 @@ export interface LaunchResult {
   printed?: string;
   launchToken?: string;
   paneId?: string;
+  agentName?: string;
 }
 
 export async function launchRoutedAgent(input: {
@@ -72,10 +84,12 @@ export async function launchRoutedAgent(input: {
     effort: input.effort,
   });
   const printed = redactCollectorText(`start ${command.join(" ")}; send handoff: ${input.handoff}`);
-  const launchToken = input.existingLaunchToken ?? `launch_${Date.now()}`;
+  const launchToken =
+    input.existingLaunchToken ?? `launch_${Date.now()}_${randomBytes(4).toString("hex")}`;
   if (input.dryRun) {
     return { ok: true, paneCreated: false, printed, launchToken };
   }
+  const agentName = herdrAgentName(input.agent, launchToken);
   const herdr =
     input.herdr ??
     createHerdrClient(async () => ({
@@ -99,28 +113,24 @@ export async function launchRoutedAgent(input: {
   }
   if (!input.existingPaneId) {
     const started = await herdr.startAgent({
-      name: `router-${input.agent}`,
+      name: agentName,
       kind: herdrAgentKind(input.agent),
       paneId,
       // Herdr runs the kind's own executable; pass only its native arguments after `--`.
       agentArgs: command.slice(1),
     });
     if (!started.ok) {
-      return {
-        ok: false,
-        error: herdrError(started, "herdr agent start failed"),
-        launchToken,
-        paneId,
-        paneCreated,
-      };
+      const error = herdrError(started, "herdr agent start failed");
+      if (paneCreated) {
+        // Do not leave an empty shell pane behind for a launch that never started.
+        await herdr.closePane(paneId);
+        return { ok: false, error, launchToken, paneCreated: false, agentName };
+      }
+      return { ok: false, error, launchToken, paneId, paneCreated, agentName };
     }
   }
   // Submit the handoff without --wait: waiting would block until the agent finishes its turn.
-  const prompted = await herdr.prompt({
-    target: `router-${input.agent}`,
-    text: input.handoff,
-    wait: false,
-  });
+  const prompted = await herdr.prompt({ target: agentName, text: input.handoff, wait: false });
   if (!prompted.ok) {
     return {
       ok: false,
@@ -131,7 +141,8 @@ export async function launchRoutedAgent(input: {
       paneId,
       paneCreated,
       printed,
+      agentName,
     };
   }
-  return { ok: true, paneCreated, printed, launchToken, paneId };
+  return { ok: true, paneCreated, printed, launchToken, paneId, agentName };
 }

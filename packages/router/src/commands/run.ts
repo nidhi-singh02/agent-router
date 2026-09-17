@@ -194,6 +194,7 @@ export async function executeRun(
         reason: decision.reason,
         status: launch.ok ? "launched" : "launch-failed",
         launchToken: launch.launchToken,
+        agentName: launch.agentName,
         error: launch.ok ? undefined : redactCollectorText(launch.error ?? "launch failed"),
       },
       reservations: [
@@ -246,6 +247,7 @@ export async function executeRun(
       dryRun: options.dryRun,
       launchToken: launch.launchToken,
       paneId: launch.paneId,
+      agentName: launch.agentName,
       sessionId,
     },
   };

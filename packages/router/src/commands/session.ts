@@ -22,6 +22,7 @@ export function formatSession(session: RouterSession): string {
   if (session.route?.reason) {
     lines.push(`Why: ${session.route.reason}`);
   }
+  lines.push(`Agent: ${session.route?.agentName ?? "none"}`);
   lines.push(`Pane: ${session.paneId ?? "none"}`);
   lines.push(`Started: ${session.createdAt}`);
   return lines.join("\n");

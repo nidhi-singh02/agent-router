@@ -51,6 +51,7 @@ export const SessionRouteSchema = z.object({
   reason: z.string().min(1),
   status: z.enum(["launched", "launch-failed"]),
   launchToken: z.string().min(1).optional(),
+  agentName: z.string().min(1).optional(),
   error: z.string().min(1).optional(),
 });
 
