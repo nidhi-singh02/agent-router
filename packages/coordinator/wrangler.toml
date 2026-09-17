@@ -1,0 +1,8 @@
+name = "model-router-coordinator"
+main = "src/index.ts"
+compatibility_date = "2026-09-17"
+
+[[d1_databases]]
+binding = "LEASES"
+database_name = "model-router-leases"
+database_id = "local-only-do-not-deploy"
