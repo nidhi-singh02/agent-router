@@ -241,4 +241,38 @@ describe("router run", () => {
     expect(result.output).toContain("Usage source: unknown (no collector returned usage)");
     expect(result.output).not.toMatch(/Usage source:.*browser-dashboard/);
   });
+
+  it("shows the pool quota used for the decision in the card", async () => {
+    const composer = {
+      ...cursorModel,
+      id: "cursor:composer-2.5",
+      launchName: "composer-2.5",
+      quotaPool: "auto",
+    } as typeof cursorModel;
+    const account = { ...personal, enabledModels: [composer.id] };
+    const usage = usageFor(personal.id, 0, {
+      source: "local-session",
+      certainty: "estimated",
+      expiresAt: "2026-09-17T10:00:00.000Z",
+      windows: [
+        { kind: "monthly", pool: "spend", remainingRatio: 0, usedRatio: 1 },
+        { kind: "monthly", pool: "auto", remainingRatio: 0.8, usedRatio: 0.2 },
+      ],
+    });
+    const result = await executeRun(
+      "Implement the approved plan.",
+      { dryRun: true },
+      {
+        accounts: [account],
+        models: [composer],
+        usage: { [personal.id]: usage },
+        client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
+        env: {},
+        now,
+      },
+    );
+    expect(result.code).toBe(0);
+    expect(result.output).toContain("Usage source: estimated local-session");
+    expect(result.output).toContain("Quota: auto 80% left (spend 0% left)");
+  });
 });

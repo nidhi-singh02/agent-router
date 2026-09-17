@@ -6,6 +6,7 @@ export function formatDecisionCard(input: {
   reservePolicy: string;
   cacheDecision: string;
   usageSource: string;
+  quota?: string;
   freshness?: string;
   reset?: string;
 }): string {
@@ -17,6 +18,7 @@ export function formatDecisionCard(input: {
     `Reserve policy: ${input.reservePolicy}`,
     `Cache decision: ${input.cacheDecision}`,
     `Usage source: ${input.usageSource}`,
+    input.quota ? `Quota: ${input.quota}` : undefined,
     input.freshness ? `Freshness: ${input.freshness}` : undefined,
     input.reset ? `Reset: ${input.reset}` : undefined,
   ]

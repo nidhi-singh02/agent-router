@@ -30,7 +30,8 @@ export function parseClaudeUsage(raw: string): {
         ],
         collectedAt: "2026-09-17T09:00:00.000Z",
         source: "official-cli",
-        certainty: "estimated",
+        // `claude auth status` reports login only; without numbers usage is unknown, not estimated.
+        certainty: weeklyUsed === undefined ? "unknown" : "estimated",
         expiresAt: "2026-09-17T09:05:00.000Z",
         activeReservationRatio: 0,
       }),

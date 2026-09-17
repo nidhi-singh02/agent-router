@@ -14,6 +14,11 @@ import { usageRefresh } from "./commands/usage.js";
 import { loadConfig } from "./config/config-loader.js";
 import { createDefaultRunDeps } from "./commands/runtime.js";
 import { formatError } from "./presentation/errors.js";
+import { formatAccountQuota } from "./presentation/quota.js";
+import { collectUsageChain } from "./collectors/collector-chain.js";
+import { collectorsForAccount } from "./collectors/registry.js";
+import type { Account } from "./domain/account.js";
+import type { UsageSnapshot } from "./domain/usage.js";
 
 export interface CliIo {
   write(chunk: string): boolean;
@@ -25,6 +30,7 @@ export interface CliOptions {
   env?: NodeJS.Dict<string>;
   run?: typeof executeRun;
   runDeps?: RunDeps;
+  collectUsage?: (account: Account) => Promise<UsageSnapshot>;
 }
 
 export function createProgram(options: CliOptions = {}): Command & { exitCode?: number } {
@@ -71,10 +77,20 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
         program.exitCode = 1;
       }
     });
-  program.command("status").action(() => {
+  program.command("status").action(async () => {
     try {
       const config = loadConfig({ env });
-      stdout.write(`${formatStatus({ accounts: config.accounts })}\n`);
+      const collect =
+        options.collectUsage ??
+        ((account: Account) => collectUsageChain(account, collectorsForAccount(account)));
+      const snapshots = await Promise.all(config.accounts.map((account) => collect(account)));
+      const quota = Object.fromEntries(
+        config.accounts.map((account, index) => [
+          account.id,
+          formatAccountQuota(snapshots[index]!),
+        ]),
+      );
+      stdout.write(`${formatStatus({ accounts: config.accounts, quota })}\n`);
     } catch (error) {
       stderr.write(`${formatError(error)}\n`);
       program.exitCode = 1;

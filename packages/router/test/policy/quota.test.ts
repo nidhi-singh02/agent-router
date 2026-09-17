@@ -57,3 +57,32 @@ describe("cost estimator", () => {
     expect(estimateTaskCostRatio({ relativeQuotaCost: 2, baselineRatio: 0.03 })).toBeCloseTo(0.06);
   });
 });
+
+describe("quota pools", () => {
+  const pooled = snapshot([
+    { kind: "monthly", pool: "spend", remainingRatio: 0 },
+    { kind: "monthly", pool: "auto", remainingRatio: 0.8 },
+  ]);
+
+  it("uses only the model's pool when windows are pooled", () => {
+    expect(projectedRemainingRatio(pooled, 0.02, "auto")).toBeCloseTo(0.78);
+    expect(projectedRemainingRatio(pooled, 0.02, "spend")).toBeCloseTo(-0.02);
+  });
+
+  it("uses every window when the model has no pool", () => {
+    expect(projectedRemainingRatio(pooled, 0.02)).toBeCloseTo(-0.02);
+  });
+
+  it("still applies unpooled windows to a pooled model", () => {
+    const mixed = snapshot([
+      { kind: "five-hour", remainingRatio: 0.3 },
+      { kind: "monthly", pool: "auto", remainingRatio: 0.8 },
+    ]);
+    expect(projectedRemainingRatio(mixed, 0, "auto")).toBeCloseTo(0.3);
+  });
+
+  it("is unknown when no window applies to the model's pool", () => {
+    const spendOnly = snapshot([{ kind: "monthly", pool: "spend", remainingRatio: 0.5 }]);
+    expect(projectedRemainingRatio(spendOnly, 0, "auto")).toBeUndefined();
+  });
+});

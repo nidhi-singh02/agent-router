@@ -26,6 +26,17 @@ describe("provider parsers", () => {
     expect(parsed.diagnostic).toMatch(/five-hour/i);
   });
 
+  it("marks Claude usage unknown when auth status has no usage numbers", () => {
+    const parsed = parseClaudeUsage(
+      JSON.stringify({ loggedIn: true, authMethod: "claude.ai", subscriptionType: "max" }),
+    );
+    expect(parsed.snapshot.certainty).toBe("unknown");
+    expect(parsed.snapshot.windows.every((window) => window.remainingRatio === undefined)).toBe(
+      true,
+    );
+    expect(parsed.credentialPresent).toBe(true);
+  });
+
   it("attaches Codex usage to the OpenAI provider", () => {
     const parsed = parseCodexUsage(readFileSync(path.join(dir, "openai.json"), "utf8"));
     expect(parsed.provider).toBe("openai");

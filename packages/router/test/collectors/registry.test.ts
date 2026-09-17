@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -20,15 +21,29 @@ describe("collector registry", () => {
     );
   });
 
-  it("skips the OpenCode local-session collector for non-OpenCode accounts", () => {
+  it("skips local-session for accounts without a local session source", () => {
     const account = {
       ...personal,
+      agent: "claude-code" as const,
+      provider: "anthropic" as typeof personal.provider,
+      enabledModels: ["anthropic:claude-sonnet"] as unknown as typeof personal.enabledModels,
       collectorPreference: ["official-cli", "local-session", "browser-dashboard"] as const,
     };
     expect(collectorsForAccount(account).map((collector) => collector.kind)).toEqual([
       "official-cli",
       "browser-dashboard",
     ]);
+  });
+
+  it("uses the Cursor status line quota cache as local-session for Cursor accounts", async () => {
+    const account = { ...personal, collectorPreference: ["local-session"] as const };
+    const [local] = collectorsForAccount(account, {
+      cursorQuotaCachePath: path.join(os.tmpdir(), "missing-cursor-quota.json"),
+    });
+    expect(local?.kind).toBe("local-session");
+    const snapshot = await local!.collectUsage(account);
+    expect(snapshot.source).toBe("local-session");
+    expect(snapshot.certainty).toBe("unknown");
   });
 
   it("uses the OpenCode local-session collector for the OpenCode CLI", () => {

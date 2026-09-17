@@ -5,11 +5,13 @@ import { createCodexCollector } from "./openai/codex-collector.js";
 import { opencodeCollector } from "./opencode/opencode-collector.js";
 import { createBrowserDashboardCollector } from "./browser/dashboard-collector.js";
 import { runCommand } from "./command-runner.js";
+import { createCursorStatuslineCollector } from "./cursor/cursor-statusline-collector.js";
 import type { UsageCollector } from "./types.js";
 
 export interface CollectorRegistryOptions {
   runCommand?: typeof runCommand;
   browserCollector?: UsageCollector;
+  cursorQuotaCachePath?: string;
 }
 
 function officialCollector(account: Account, run: typeof runCommand): UsageCollector {
@@ -25,8 +27,7 @@ function officialCollector(account: Account, run: typeof runCommand): UsageColle
   return createCursorCollector(run);
 }
 
-// The local-session collector reads OpenCode state, so it only applies to the OpenCode CLI
-// or to OpenCode models used from another harness.
+// OpenCode local state only applies to the OpenCode CLI or to OpenCode models used from another harness.
 export function usesOpenCode(account: Account): boolean {
   return (
     account.agent === "opencode" ||
@@ -47,7 +48,13 @@ export function collectorsForAccount(
       return [officialCollector(account, run)];
     }
     if (kind === "local-session") {
-      return usesOpenCode(account) ? [opencodeCollector] : [];
+      if (usesOpenCode(account)) {
+        return [opencodeCollector];
+      }
+      if (account.agent === "cursor") {
+        return [createCursorStatuslineCollector({ cachePath: options.cursorQuotaCachePath })];
+      }
+      return [];
     }
     return [browser];
   });
