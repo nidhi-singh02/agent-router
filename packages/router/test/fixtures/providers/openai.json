@@ -1,0 +1,7 @@
+{
+  "auth": { "present": true },
+  "models": [{ "id": "codex", "available": true }],
+  "usage": {
+    "windows": [{ "kind": "weekly", "remainingPercent": 70 }]
+  }
+}

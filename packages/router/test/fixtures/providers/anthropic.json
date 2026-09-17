@@ -1,0 +1,9 @@
+{
+  "loggedIn": true,
+  "models": [{ "id": "sonnet", "available": true }],
+  "usage": {
+    "fiveHour": null,
+    "weeklyUsedPercent": 20,
+    "note": "five-hour window not exposed by this fixture"
+  }
+}

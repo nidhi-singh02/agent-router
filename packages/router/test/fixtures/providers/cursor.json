@@ -1,0 +1,8 @@
+{
+  "account": { "emailRedacted": "user@example.com" },
+  "models": [{ "id": "grok-4.6", "available": true }],
+  "usage": {
+    "plan": "pro",
+    "windows": [{ "kind": "five-hour", "usedPercent": 28 }]
+  }
+}

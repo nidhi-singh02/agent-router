@@ -1,0 +1,5 @@
+{
+  "harness": "opencode",
+  "authenticatedProviders": ["openai"],
+  "models": [{ "id": "gpt", "provider": "openai" }]
+}
