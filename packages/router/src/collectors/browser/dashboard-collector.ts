@@ -1,4 +1,3 @@
-import { normalizeUsage } from "../normalizer.js";
 import { redactCollectorText } from "../normalizer.js";
 import { DASHBOARD_REGISTRY } from "./dashboard-registry.js";
 
