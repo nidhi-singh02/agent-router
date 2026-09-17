@@ -6,12 +6,14 @@ import { opencodeCollector } from "./opencode/opencode-collector.js";
 import { createBrowserDashboardCollector } from "./browser/dashboard-collector.js";
 import { runCommand } from "./command-runner.js";
 import { createCursorStatuslineCollector } from "./cursor/cursor-statusline-collector.js";
+import { createClaudeStatuslineCollector } from "./anthropic/claude-statusline-collector.js";
 import type { UsageCollector } from "./types.js";
 
 export interface CollectorRegistryOptions {
   runCommand?: typeof runCommand;
   browserCollector?: UsageCollector;
   cursorQuotaCachePath?: string;
+  claudeQuotaCachePath?: string;
 }
 
 function officialCollector(account: Account, run: typeof runCommand): UsageCollector {
@@ -53,6 +55,9 @@ export function collectorsForAccount(
       }
       if (account.agent === "cursor") {
         return [createCursorStatuslineCollector({ cachePath: options.cursorQuotaCachePath })];
+      }
+      if (account.agent === "claude-code") {
+        return [createClaudeStatuslineCollector({ cachePath: options.claudeQuotaCachePath })];
       }
       return [];
     }

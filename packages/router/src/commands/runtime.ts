@@ -17,6 +17,8 @@ import { createCoordinatorClient, type CoordinatorClient } from "../activity/coo
 import { accountFingerprint } from "@model-router/hermes-heartbeat";
 import { createBrowserDashboardCollector } from "../collectors/browser/dashboard-collector.js";
 import { runCommand } from "../collectors/command-runner.js";
+import { normalizeUsage } from "../collectors/normalizer.js";
+import type { UsageSnapshot } from "../domain/usage.js";
 import { openDatabase } from "../store/database.js";
 import { SessionRepository } from "../store/session-repository.js";
 
@@ -62,6 +64,20 @@ export interface RuntimeOverrides {
   runCommand?: typeof runCommand;
   fetchDashboardHtml?: (provider: Account["provider"]) => Promise<string>;
   sessions?: RunDeps["sessions"];
+  /** Skip every usage collector (router run without --usage); usage is reported as skipped. */
+  skipUsage?: boolean;
+}
+
+function skippedUsage(account: Account): UsageSnapshot {
+  const now = Date.now();
+  return normalizeUsage({
+    accountId: account.id,
+    windows: [{ kind: "five-hour" }],
+    collectedAt: new Date(now).toISOString(),
+    source: "skipped",
+    certainty: "unknown",
+    expiresAt: new Date(now + 60_000).toISOString(),
+  });
 }
 
 function defaultActivityClient(
@@ -106,10 +122,16 @@ export async function createDefaultRunDeps(
           fetchHtml: overrides.fetchDashboardHtml,
         }),
       }));
-  const usage: RunDeps["usage"] = {};
-  for (const account of config.accounts) {
-    usage[account.id] = await collectUsageChain(account, resolveCollectors(account));
-  }
+  const snapshots = await Promise.all(
+    config.accounts.map((account) =>
+      overrides.skipUsage
+        ? skippedUsage(account)
+        : collectUsageChain(account, resolveCollectors(account)),
+    ),
+  );
+  const usage: RunDeps["usage"] = Object.fromEntries(
+    config.accounts.map((account, index) => [account.id, snapshots[index]!]),
+  );
   const apiKey = env.TYPESAFE_API_KEY;
   const createTypeSafe = overrides.createTypeSafeClient ?? createLiveTypeSafeClient;
   const client = apiKey && apiKey.length > 0 ? createTypeSafe(apiKey) : unavailableTypeSafe();

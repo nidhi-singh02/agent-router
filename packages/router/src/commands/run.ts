@@ -220,9 +220,11 @@ export async function executeRun(
     cacheDecision: "phase sticky unless eligibility changes",
     usageSource: !snapshot
       ? "unknown"
-      : snapshot.source === "none"
-        ? "unknown (no collector returned usage)"
-        : `${snapshot.certainty} ${snapshot.source}`,
+      : snapshot.source === "skipped"
+        ? "skipped (run with --usage to check quota)"
+        : snapshot.source === "none"
+          ? "unknown (no collector returned usage)"
+          : `${snapshot.certainty} ${snapshot.source}`,
     quota: snapshot ? formatPoolQuota(snapshot, selected.model.quotaPool) : undefined,
     freshness: snapshot ? `refreshed at ${snapshot.collectedAt}` : undefined,
     reset: snapshot?.windows.find((window) => window.resetsAt)?.resetsAt,
