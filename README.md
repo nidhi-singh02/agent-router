@@ -1,4 +1,6 @@
-# Model Router
+# Agent Router
+
+Local-first, quota-aware routing for AI coding agents in Herdr.
 
 `router` is a command-line tool that picks an AI coding agent, model, and reasoning effort
 for a task, then starts that agent for you in a Herdr pane.
@@ -10,6 +12,17 @@ router run "implement the approved plan in docs/plans/billing.md"
 It filters your subscriptions with fixed rules (enabled models, quota, the 40% reserve on
 shared accounts), asks TypeSafe to rank what is left and choose an effort, starts the chosen
 agent (Cursor, Claude Code, Codex, or OpenCode), and hands it the task.
+
+> **Pre-release:** the project is under active development. Review the security and privacy
+> notes below before using real credentials or shared accounts.
+
+## Why Agent Router?
+
+- **Quota-aware:** routes around depleted or reserved subscription capacity.
+- **Policy-first:** deterministic eligibility rules run before semantic ranking.
+- **Local-first:** configuration, usage snapshots, decisions, and session history stay on
+  your machine unless an explicitly configured integration needs them.
+- **Agent-agnostic:** supports Cursor, Claude Code, Codex, and OpenCode through one command.
 
 ## Prerequisites
 
@@ -314,3 +327,35 @@ npm test         # tests only
 Do not deploy the Cloudflare coordinator (`packages/coordinator`) or write into an external
 Hermes checkout (`packages/hermes-heartbeat`) without explicit approval. See `docs/` for
 configuration, operations, privacy, and provider support.
+
+## Security and privacy
+
+- Never commit `.model-router/`, `.env`, API keys, bearer tokens, cookies, or provider cache
+  files. The repository ignores the local state directories and environment files by default.
+- Store the TypeSafe key in the macOS Keychain as shown above. Environment variables are a
+  supported fallback, but are easier to expose accidentally through child processes or logs.
+- Task text is sent to TypeSafe for classification and ranking. Do not route secrets,
+  credentials, private client data, or other sensitive text.
+- `router run` starts local agent processes with the permissions of your current user. Review
+  the selected route and task before launching it.
+- The optional coordinator and heartbeat packages are not required for ordinary personal
+  accounts. Treat them as pre-release components and review their deployment configuration
+  before exposing them to a network.
+
+See [Privacy](docs/privacy.md), [Operations](docs/operations.md), and
+[Configuration](docs/configuration.md) for the detailed data flow and deployment guidance.
+
+## Contributing
+
+Issues and focused pull requests are welcome. Before opening a pull request, run:
+
+```sh
+npm run verify
+```
+
+Please do not include credentials, private account data, local quota caches, generated state,
+or provider dashboard exports in issues, tests, or commits.
+
+## License
+
+Agent Router is available under the [MIT License](LICENSE).
