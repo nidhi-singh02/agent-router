@@ -32,15 +32,22 @@ export interface RunDeps {
   existingLaunchToken?: string;
   existingPaneId?: string;
   activityClient?: CoordinatorClient;
-  sessions?: Pick<SessionRepository, "save">;
+  sessions?: Pick<SessionRepository, "save" | "get">;
 }
 
 export async function executeRun(
   task: string,
-  options: { dryRun: boolean },
+  options: { dryRun: boolean; previousSessionId?: string },
   deps: RunDeps,
 ): Promise<{ output: string; json: unknown; code: number }> {
   const now = deps.now ?? new Date();
+  const previous = options.previousSessionId
+    ? deps.sessions?.get(options.previousSessionId)
+    : undefined;
+  if (options.previousSessionId && !previous) {
+    const output = `Session not found: ${options.previousSessionId}`;
+    return { code: 2, output, json: { ok: false, error: output } };
+  }
   const reservations = deps.reservations ?? new ReservationService();
   const eligible = [];
   const exclusions = [];
@@ -160,28 +167,40 @@ export async function executeRun(
   });
   const handoff = buildHandoff({
     task,
-    constraints: ["Do not deploy or consume extra quota."],
+    constraints: ["Do not deploy or publish anything without asking the user."],
     currentPhase: decision.phase,
     relevantFiles: [],
     completedChecks: [],
     remainingAcceptanceCriteria: [],
   });
+  // Recorded launches get their session id up front so the agent can route the next phase.
+  const sessionId = !options.dryRun && deps.sessions ? `sess_${randomUUID()}` : undefined;
   const launch = await launchRoutedAgent({
     env: deps.env,
     agent: selected.model.agent,
     launchName: selected.model.launchName,
     effort: decision.effort,
-    handoff: formatHandoffPrompt(handoff),
+    handoff: formatHandoffPrompt(
+      handoff,
+      sessionId
+        ? {
+            sessionId,
+            previous: previous
+              ? { sessionId: previous.id, phase: previous.phase, task: previous.task }
+              : undefined,
+          }
+        : undefined,
+    ),
     dryRun: options.dryRun,
     herdr: deps.herdr,
     existingLaunchToken: deps.existingLaunchToken,
     existingPaneId: deps.existingPaneId,
   });
-  let sessionId: string | undefined;
-  if (!options.dryRun && deps.sessions) {
+  if (sessionId && deps.sessions) {
     const startedAt = new Date().toISOString();
     const session = RouterSessionSchema.parse({
-      id: `sess_${randomUUID()}`,
+      id: sessionId,
+      previousSessionId: previous?.id,
       task: redactCollectorText(task),
       phase: decision.phase,
       route: {
@@ -211,13 +230,15 @@ export async function executeRun(
       updatedAt: startedAt,
     });
     deps.sessions.save(session);
-    sessionId = session.id;
   }
   const snapshot = deps.usage[selected.account.id];
   const card = formatDecisionCard({
     selected: `${selected.model.agent} / ${selected.model.launchName} / ${decision.effort}`,
     phase: decision.phase,
     why: decision.reason,
+    previousSession: previous
+      ? `${previous.id} (${previous.phase} -> ${decision.phase})`
+      : undefined,
     sharedActivity:
       ownerMessages.get(selected.account.id) ??
       (selected.account.ownership === "shared" && !deps.activityClient

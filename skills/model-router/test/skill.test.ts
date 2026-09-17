@@ -17,5 +17,16 @@ describe("model-router skill", () => {
     expect(prompts).toMatch(/## Status/);
     expect(prompts).toMatch(/## Refresh/);
     expect(prompts).toMatch(/## Resume/);
+    expect(prompts).toMatch(/## Phase complete/);
+  });
+
+  it("routes the next phase through the recorded session after asking the user", () => {
+    const skill = readFileSync(path.join(skillDir, "SKILL.md"), "utf8");
+    expect(skill).toMatch(/Router session:/);
+    expect(skill).toMatch(/## End of a phase/);
+    expect(skill).toMatch(/router session <id>/);
+    expect(skill).toMatch(/router run --session <id> "<next-phase task>" --dry-run/);
+    expect(skill).toMatch(/ask whether to route the next phase/i);
+    expect(skill).toMatch(/Do not route again for the phase you are still in/);
   });
 });

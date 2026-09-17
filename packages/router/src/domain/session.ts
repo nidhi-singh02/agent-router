@@ -60,6 +60,8 @@ export const RouterSessionSchema = z.object({
   task: z.string().min(1),
   phase: WorkflowPhaseSchema,
   route: SessionRouteSchema.optional(),
+  /** The session for the previous workflow phase, set by `router run --session <id>`. */
+  previousSessionId: SessionIdSchema.optional(),
   cacheAffinity: CacheAffinitySchema.optional(),
   reservations: z.array(ReservationSchema),
   handoffs: z.array(HandoffSchema),
