@@ -12,8 +12,9 @@ HERDR="${HERDR_BIN_PATH:-herdr}"
 router() {
   if [ -n "${ROUTER_BIN:-}" ]; then
     "$ROUTER_BIN" "$@"
-  elif command -v router >/dev/null 2>&1; then
-    command router "$@"
+  elif router_on_path="$(type -P router)" && [ -n "$router_on_path" ]; then
+    # type -P searches PATH only; command -v would match this function itself.
+    "$router_on_path" "$@"
   elif [ -f "$PLUGIN_ROOT/packages/router/dist/cli.js" ]; then
     node "$PLUGIN_ROOT/packages/router/dist/cli.js" "$@"
   else
