@@ -2,7 +2,7 @@
 
 Commands:
 
-- `router run "<task>" [--dry-run] [--usage] [--session <id>] [--json]` (default reads local-session quota caches; `--usage` also runs official CLI/API and browser collectors. Shared accounts still need known usage.)
+- `router run "<task>" [--dry-run] [--usage] [--session <id>] [--json]` (default reads local-session quota caches; `--usage` also runs official CLI/API and browser collectors. Personal accounts stay eligible without known quota; shared accounts still need known usage.)
 - `router status [--usage]` (`--usage` shows each account's quota via the full collector chain; without it, accounts only)
 - `router session [id] [--list] [--limit <n>] [--json]` (latest launched session by default; dry runs are not recorded)
 - `router accounts`

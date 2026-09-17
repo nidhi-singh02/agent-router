@@ -106,7 +106,7 @@ describe("collector chain", () => {
     expect(result.source).toBe("none");
   });
 
-  it("keeps the unknown fallback fresh so personal accounts are not excluded as stale", async () => {
+  it("keeps the unknown fallback fresh so missing quota is unknown, not stale", async () => {
     const result = await collectUsageChain(account, [
       collector("cli", {
         kind: "official-cli",

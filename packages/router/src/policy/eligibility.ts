@@ -3,6 +3,7 @@ import type { ModelProfile } from "../domain/model-profile.js";
 import type { UsageSnapshot } from "../domain/usage.js";
 import { isFresh } from "./freshness.js";
 import { projectedRemainingRatio, remainingRatio } from "./quota.js";
+import { roundRatio } from "./ratio.js";
 
 export type ExclusionReason =
   | "account-disabled"
@@ -31,23 +32,24 @@ export function evaluateEligibility(input: EligibilityInput): EligibilityResult 
   if (!input.account.enabledModels.includes(input.model.id)) {
     return { eligible: false, reason: "model-not-enabled" };
   }
-  if (!isFresh(input.usage, input.now)) {
+  const personal = input.account.ownership === "personal";
+  if (!personal && !isFresh(input.usage, input.now)) {
     return { eligible: false, reason: "stale-usage" };
   }
   const pool = input.model.quotaPool;
   const remaining = remainingRatio(input.usage, pool);
-  if (remaining !== undefined && remaining <= 0) {
+  if (!personal && remaining !== undefined && remaining <= 0) {
     return { eligible: false, reason: "quota-exhausted", projectedRemainingRatio: remaining };
   }
   const projected = projectedRemainingRatio(input.usage, input.estimatedCostRatio, pool);
   if (projected === undefined) {
-    if (input.account.ownership === "shared") {
-      return { eligible: false, reason: "unknown-usage" };
+    if (personal) {
+      return { eligible: true, projectedRemainingRatio: 1 };
     }
-    return { eligible: true, projectedRemainingRatio: Number.NaN };
+    return { eligible: false, reason: "unknown-usage" };
   }
-  const roundedProjected = Math.round(projected * 1e6) / 1e6;
-  if (input.account.ownership === "shared" && roundedProjected < input.account.reserveFloor) {
+  const roundedProjected = roundRatio(projected);
+  if (!personal && roundedProjected < input.account.reserveFloor) {
     return { eligible: false, reason: "below-reserve", projectedRemainingRatio: roundedProjected };
   }
   return { eligible: true, projectedRemainingRatio: roundedProjected };
