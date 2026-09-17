@@ -16,6 +16,10 @@ agent (Cursor, Claude Code, Codex, or OpenCode), and hands it the task.
 > **Pre-release:** the project is under active development. Review the security and privacy
 > notes below before using real credentials or shared accounts.
 
+## Demo
+
+[![Agent Router demo](https://img.youtube.com/vi/7w8eRWnUUA8/maxresdefault.jpg)](https://youtu.be/7w8eRWnUUA8 "Agent Router demo — click to play")
+
 ## Why Agent Router?
 
 - **Quota-aware:** routes around depleted or reserved subscription capacity.
@@ -39,7 +43,7 @@ agent (Cursor, Claude Code, Codex, or OpenCode), and hands it the task.
 ### 1. Install and build
 
 ```sh
-git clone https://github.com/nidhi-singh02/model-router.git
+git clone https://github.com/nidhi-singh02/agent-router.git
 cd model-router
 npm install
 npm run build
@@ -298,6 +302,20 @@ router usage refresh [--source local-session|official-cli|browser] [--dry-run]
 `--json` prints machine-readable output for plugins, including `sessionId`, `agentName`, and
 `paneId`. `router usage refresh` defaults to local-session file reads; `--dry-run` prints
 facts and does not persist. Without `--dry-run` it writes snapshots to SQLite.
+
+## Herdr plugin
+
+Agent Router also ships as a Herdr plugin, so routing, status, sessions, and usage refresh are
+reachable from Herdr actions and keybindings instead of a shell prompt:
+
+```sh
+herdr plugin install nidhi-singh02/agent-router
+herdr plugin action list --plugin nidhi-singh02.agent-router
+```
+
+The manifest is `herdr-plugin.toml` at the repository root; the scripts it runs live in
+`herdr-plugin/`. See [`herdr-plugin/README.md`](herdr-plugin/README.md) for the action list,
+keybinding examples, and local development with `herdr plugin link`.
 
 ## Troubleshooting
 
