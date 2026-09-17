@@ -17,7 +17,7 @@
 - Do not call live TypeSafe or quota-consuming provider CLIs unless the user explicitly approves in that session.
 - TypeSafe still classifies phase; code must not invent phase from the task string.
 - Shared 40% reserve and personal-vs-shared unknown-usage rules stay as they are.
-- Credentials, cookies, Telegram identifiers, and raw heartbeats never enter TypeSafe state, SQLite payloads beyond existing redaction, or docs/examples.
+- Credentials, cookies, account-user identifiers, and raw heartbeats never enter TypeSafe state, SQLite payloads beyond existing redaction, or docs/examples.
 - Every task's requirements include this section.
 
 ## File map

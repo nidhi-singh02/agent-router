@@ -57,7 +57,7 @@ The detector covers, at minimum:
 - explicit password, secret, cookie, and authorization assignments;
 - PEM private keys;
 - credential-bearing database and service URLs;
-- Telegram bot tokens and comparable structured credentials.
+- `<digits>:<secret>` bot-token-shaped credentials and comparable structured secrets.
 
 Errors identify only the category and never echo the matched value. The same gate runs before classification, ranking, and effort calls. This change does not attempt to identify arbitrary health, legal, or personal prose; callers remain responsible for not sending sensitive narrative content. A future local-only semantic classifier is outside this hardening scope.
 

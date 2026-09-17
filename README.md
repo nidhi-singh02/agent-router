@@ -264,7 +264,7 @@ seconds. The router does not write this file.
 - **Personal:** stays eligible even if quota is missing, stale, or at 0%. The card may still
   show remaining quota when a cache exists.
 - **Shared:** needs known usage (a fresh local-session cache, or `--usage`) and keeps 40% of
-  its quota in reserve. It is excluded when the coordinator reports someone else using it.
+  its quota in reserve. It is excluded when the coordinator reports the account as already active.
   Without a coordinator (the usual local setup), it routes on its quota alone.
 
 ## Phases: planning, then implementation

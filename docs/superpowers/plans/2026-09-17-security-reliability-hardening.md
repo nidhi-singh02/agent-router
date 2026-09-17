@@ -112,7 +112,7 @@
 **Interfaces:**
 - Produces: `assertSafeState` category-based rejection without matched-value disclosure.
 
-- [ ] Add table-driven failing tests for GitHub/provider tokens, password assignments, cookies, PEM private keys, credential-bearing URLs, Telegram bot tokens, and safe ordinary task text.
+- [ ] Add table-driven failing tests for GitHub/provider tokens, password assignments, cookies, PEM private keys, credential-bearing URLs, `<digits>:<secret>` bot-token-shaped credentials, and safe ordinary task text.
 - [ ] Add a failing decision-engine test proving no TypeSafe call occurs when classification state is sensitive.
 - [ ] Run the focused semantic tests and confirm the unsupported secret formats currently pass.
 - [ ] Implement deterministic category patterns and sanitized error messages.

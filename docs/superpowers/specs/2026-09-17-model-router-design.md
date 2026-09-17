@@ -89,7 +89,7 @@ The implementation is a small monorepo containing a reusable router core, CLI, p
 - Selecting a supported reasoning effort.
 - Deciding whether a phase transition justifies switching models.
 
-TypeSafe receives normalized account and model facts, opaque candidate IDs, and the task text required to classify the work. It never receives credentials, cookies, Telegram identifiers, raw heartbeat records, or provider session tokens.
+TypeSafe receives normalized account and model facts, opaque candidate IDs, and the task text required to classify the work. It never receives credentials, cookies, account-user identifiers, raw heartbeat records, or provider session tokens.
 
 Each TypeSafe unit uses a closed answer set (`Choice`), ordered scoring (`Score`), or calibrated yes/no probability (`Noul`). Independent questions may be batched. Confidence thresholds are applied according to consequence: a low-confidence choice that may affect quality or shared quota presents the top two eligible routes to the user; low-risk ambiguity uses the conservative default.
 
@@ -206,9 +206,9 @@ Provider limitations are surfaced honestly. If a provider does not expose an exa
 
 ## 8. Shared Subscription Activity
 
-The subscription owner runs the router. Friends use the subscription indirectly through Hermes Telegram and do not receive provider credentials or access to the router.
+The account owner runs the router. Other workloads on a shared account never receive provider credentials or access to the router; they report activity only through the heartbeat integration.
 
-Hermes sends a short-lived heartbeat around provider requests:
+The heartbeat integration sends a short-lived lease around provider requests:
 
 ```ts
 interface HeartbeatLease {
@@ -221,17 +221,17 @@ interface HeartbeatLease {
 }
 ```
 
-The hosted coordinator supports only authenticated create/renew, normalized status read, release, and automatic expiry. Hermes and the owner router use separate credentials. The router UI displays only:
+The hosted coordinator supports only authenticated create/renew, normalized status read, release, and automatic expiry. The heartbeat writer and the owner router use separate credentials. The router UI displays only:
 
 ```text
 shared subscription currently active
 ```
 
-No Telegram identity, personal label, task content, prompt, message, filename, credential, or device identity is transmitted. The coordinator does not expose raw lease inspection through the client API.
+No personal label, task content, prompt, message, filename, credential, or device identity is transmitted. The coordinator does not expose raw lease inspection through the client API.
 
 The account fingerprint is derived locally with a shared secret using HMAC. It is not a plain hash of an email address, account label, or provider ID, which prevents the coordinator from testing predictable identifiers offline.
 
-If the heartbeat service is unreachable, shared accounts become conservatively constrained or ineligible according to configured policy. If Hermes cannot emit a heartbeat, quota deltas may provide delayed inference but are never presented as confirmed live activity.
+If the heartbeat service is unreachable, shared accounts become conservatively constrained or ineligible according to configured policy. If no heartbeat is emitted, quota deltas may provide delayed inference but are never presented as confirmed live activity.
 
 ## 9. Routing Algorithm
 

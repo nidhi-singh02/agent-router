@@ -94,7 +94,7 @@ Out of scope. Exit 3 stays print-two-options.
 
 ## Trust boundary
 
-Unchanged. Quota arithmetic, reserve floor, eligibility, and sticky reuse are deterministic. TypeSafe still classifies phase and, when reconsidering, ranks only eligible opaque ids. No credentials, cookies, Telegram ids, or raw heartbeats in TypeSafe state.
+Unchanged. Quota arithmetic, reserve floor, eligibility, and sticky reuse are deterministic. TypeSafe still classifies phase and, when reconsidering, ranks only eligible opaque ids. No credentials, cookies, account-user ids, or raw heartbeats in TypeSafe state.
 
 ## Success criteria
 

@@ -138,7 +138,7 @@
 - [ ] Batch independent classifications, but keep route ranking dependent on their outputs.
 - [ ] Exclude `ultra` unless the user explicitly requests it and the selected model supports it.
 - [ ] Implement consequence-aware confidence thresholds and top-two output for material ambiguity.
-- [ ] Ensure TypeSafe inputs contain no credentials, cookies, account labels, Telegram data, or raw heartbeat records.
+- [ ] Ensure TypeSafe inputs contain no credentials, cookies, account labels, or raw heartbeat records.
 - [ ] Add evaluation fixtures for planning, specification, implementation, debugging, review, creative ideation, metadata, research, and routine transformations.
 - [ ] Run semantic tests with the fake client; make live evals opt-in via `TYPESAFE_API_KEY`.
 - [ ] Commit: `feat: add typesafe routing judgments`
@@ -252,7 +252,7 @@
 
 - [ ] Write failing tests proving HMAC fingerprints are stable with the same secret, unlinkable without it, and never contain the raw account ID.
 - [ ] Wrap a provider request with lease create/renew/release behavior and crash-safe TTL semantics.
-- [ ] Prove serialized payloads contain no Telegram ID, name, username, message, prompt, or task metadata.
+- [ ] Prove serialized payloads contain no account-user ID, name, username, message, prompt, or task metadata.
 - [ ] Make heartbeat failures non-fatal to Hermes requests while emitting a local owner diagnostic.
 - [ ] Document the minimal integration call around Hermes provider requests; do not modify an external Hermes checkout without confirming its path and ownership.
 - [ ] Commit: `feat: add privacy-safe hermes heartbeat client`
@@ -338,7 +338,7 @@
 - [ ] Write failing CLI tests for help, configuration errors, safe route, no eligible route, low-confidence top two, dry run, and duplicate prevention.
 - [ ] Compose collection, eligibility, TypeSafe decision, revalidation, reservation, explanation, and launch behind `router run`.
 - [ ] Print source, freshness, certainty, reset information, reserve status, semantic reason, cache decision, model, and effort.
-- [ ] Ensure `status` and error output never reveal secrets or friend identity.
+- [ ] Ensure `status` and error output never reveal secrets or the identity of another account user.
 - [ ] Make JSON output available for future plugin integration without changing the human CLI.
 - [ ] Commit: `feat: expose explicit model router cli`
 
@@ -406,10 +406,10 @@
 - [ ] `npm run verify` passes.
 - [ ] TypeSafe is used for every semantic routing judgment and cannot bypass deterministic policy.
 - [ ] Shared accounts retain at least 40% projected quota.
-- [ ] Owner sees only `shared subscription currently active`, with no friend identity.
+- [ ] Owner sees only `shared subscription currently active`, with no identity of another account user.
 - [ ] Usage sources and uncertainty are visible.
 - [ ] Low-confidence consequential routes present two eligible choices.
 - [ ] Route is phase-sticky and cache tradeoffs are explained.
 - [ ] `router run` opens exactly one separate Herdr pane with the selected supported model and effort.
-- [ ] No credentials, browser cookies, Telegram data, or raw prompts appear in persistent logs or coordinator storage.
+- [ ] No credentials, browser cookies, or raw prompts appear in persistent logs or coordinator storage.
 - [ ] Documentation distinguishes verified provider support from estimates and unknowns.
