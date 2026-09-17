@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { createRequire } from "node:module";
 import { createProgram, runCli } from "../../src/cli.js";
 import { executeRun } from "../../src/commands/run.js";
 import { collectUsageChain } from "../../src/collectors/collector-chain.js";
@@ -43,6 +44,29 @@ describe("router run", () => {
     expect(help).toMatch(/Usage: router/);
     expect(help).toMatch(/run/);
     expect(help).toMatch(/status/);
+  });
+
+  it("reports the package version", async () => {
+    const { version } = createRequire(import.meta.url)("../../package.json") as {
+      version: string;
+    };
+    let out = "";
+    const program = createProgram({
+      stdout: {
+        write(chunk: string) {
+          out += chunk;
+          return true;
+        },
+      },
+      env: { MODEL_ROUTER_HOME: mkdtempSync(path.join(os.tmpdir(), "router-cli-")) },
+    });
+    program.exitOverride();
+    try {
+      await program.parseAsync(["node", "router", "--version"]);
+    } catch {
+      // commander throws after printing the version when exitOverride is set
+    }
+    expect(out.trim()).toBe(version);
   });
 
   it("selects a safe dry-run route and prints the decision card", async () => {

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { Command, CommanderError } from "commander";
 import { executeRun, type RunDeps } from "./commands/run.js";
@@ -8,6 +9,10 @@ import { formatSession, formatSessionList } from "./commands/session.js";
 import { openDatabase } from "./store/database.js";
 import { SessionRepository } from "./store/session-repository.js";
 import { UsageRepository } from "./store/usage-repository.js";
+
+const { version: ROUTER_VERSION } = createRequire(import.meta.url)("../package.json") as {
+  version: string;
+};
 
 const NO_SESSIONS = "No router sessions yet. Sessions are recorded when `router run` launches.\n";
 import { formatAccounts } from "./commands/accounts.js";
@@ -50,7 +55,7 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
   };
   const env = options.env ?? process.env;
   const program = new Command() as Command & { exitCode?: number };
-  program.name("router").description("Explicit model router CLI");
+  program.name("router").description("Explicit model router CLI").version(ROUTER_VERSION);
   program.configureOutput({
     writeOut: (chunk) => {
       stdout.write(chunk);
