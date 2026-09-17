@@ -23,6 +23,7 @@
 ### Task 1: Persistent multi-lease coordinator
 
 **Files:**
+
 - Modify: `packages/coordinator/src/schema.ts`
 - Modify: `packages/coordinator/src/leases.ts`
 - Modify: `packages/coordinator/src/index.ts`
@@ -31,6 +32,7 @@
 - Create: `packages/coordinator/test/worker-entry.test.ts`
 
 **Interfaces:**
+
 - Produces: `LeaseRepository` with asynchronous create/renew/release/activity operations.
 - Produces: D1 implementation used by the Worker entry and in-memory implementation used by focused tests.
 - Consumes: writer/reader bearer authentication and normalized `Activity` responses.
@@ -44,6 +46,7 @@
 ### Task 2: Heartbeat HTTP contract, unique leases, and renewal
 
 **Files:**
+
 - Modify: `packages/hermes-heartbeat/src/client.ts`
 - Modify: `packages/hermes-heartbeat/src/request-wrapper.ts`
 - Modify: `packages/hermes-heartbeat/src/index.ts`
@@ -51,6 +54,7 @@
 - Modify: `packages/hermes-heartbeat/test/privacy.test.ts`
 
 **Interfaces:**
+
 - Produces: opaque `HeartbeatLeaseHandle` returned by `create` and consumed by `renew`/`release`.
 - Produces: configurable timer hooks used to deterministically test renewal.
 - Consumes: coordinator endpoints from Task 1.
@@ -64,6 +68,7 @@
 ### Task 3: Atomic SQLite reservations
 
 **Files:**
+
 - Modify: `packages/router/src/store/migrations/001_initial.sql`
 - Modify: `packages/router/src/store/database.ts`
 - Create: `packages/router/src/store/reservation-repository.ts`
@@ -75,6 +80,7 @@
 - Modify: `packages/router/test/cli/run.test.ts`
 
 **Interfaces:**
+
 - Produces: SQLite-backed `ReservationService.tryCreate(...)` that atomically cleans expired rows, sums active ratios, validates the reserve floor, and inserts or rejects.
 - Consumes: selected account, current usage snapshot, estimated cost, and current time.
 
@@ -88,12 +94,14 @@
 ### Task 4: Filesystem permissions
 
 **Files:**
+
 - Modify: `packages/router/src/config/config-loader.ts`
 - Modify: `packages/router/src/store/database.ts`
 - Modify: `packages/router/test/config/config-loader.test.ts`
 - Modify: `packages/router/test/store/repositories.test.ts`
 
 **Interfaces:**
+
 - Produces: `ensurePrivateDirectory(path)` and database permission enforcement performed on every open.
 
 - [ ] Add a failing POSIX test that starts with permissive directory/database modes and expects `0700`/`0600`, including WAL/SHM when present.
@@ -105,11 +113,13 @@
 ### Task 5: TypeSafe sensitive-state gate
 
 **Files:**
+
 - Modify: `packages/router/src/semantic/typesafe-client.ts`
 - Modify: `packages/router/test/semantic/typesafe-client.test.ts`
 - Modify: `packages/router/test/semantic/decision-engine.test.ts`
 
 **Interfaces:**
+
 - Produces: `assertSafeState` category-based rejection without matched-value disclosure.
 
 - [ ] Add table-driven failing tests for GitHub/provider tokens, password assignments, cookies, PEM private keys, credential-bearing URLs, `<digits>:<secret>` bot-token-shaped credentials, and safe ordinary task text.
@@ -122,12 +132,14 @@
 ### Task 6: Herdr environment isolation
 
 **Files:**
+
 - Modify: `packages/router/src/launch/herdr-client.ts`
 - Modify: `packages/router/src/commands/runtime.ts`
 - Modify: `packages/router/test/launch/herdr-client.test.ts`
 - Modify: `packages/router/test/commands/runtime.test.ts`
 
 **Interfaces:**
+
 - Produces: `buildChildProcessEnv` allowlist and `createProcessCommandAdapter({ env })`.
 
 - [ ] Add a failing real-child-process test proving a supplied credential variable is absent while `PATH`, terminal, locale, temporary-directory, home/user, and Herdr variables are retained when present.
@@ -139,6 +151,7 @@
 ### Task 7: Coordinator transport security and documentation
 
 **Files:**
+
 - Modify: `packages/router/src/config/config-schema.ts`
 - Modify: `packages/router/src/activity/coordinator-client.ts`
 - Modify: `packages/router/test/config/config-loader.test.ts`
@@ -151,6 +164,7 @@
 - Modify: `packages/hermes-heartbeat/README.md`
 
 **Interfaces:**
+
 - Produces: shared coordinator URL validator allowing HTTPS and HTTP loopback only.
 
 - [ ] Add failing tests rejecting remote HTTP at config parsing and programmatic client construction while accepting HTTPS and loopback HTTP.
@@ -163,9 +177,11 @@
 ### Task 8: Independent review and full verification
 
 **Files:**
+
 - Review all changed files; modify only to resolve verified review findings.
 
 **Interfaces:**
+
 - Consumes: all previous task outputs.
 - Produces: verified implementation evidence and final branch state.
 
