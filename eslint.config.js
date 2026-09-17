@@ -16,6 +16,13 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    // Plugin helper scripts run under Node outside the TypeScript workspaces.
+    files: ["herdr-plugin/**/*.mjs"],
+    languageOptions: {
+      globals: { process: "readonly" },
+    },
+  },
+  {
     files: ["**/*.ts"],
     languageOptions: {
       parserOptions: {

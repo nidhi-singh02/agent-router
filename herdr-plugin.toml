@@ -1,0 +1,79 @@
+# Herdr plugin manifest for Agent Router.
+#
+# Install:  herdr plugin install nidhi-singh02/agent-router
+# Develop:  herdr plugin link /path/to/model-router
+
+id = "nidhi-singh02.agent-router"
+name = "Agent Router"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Quota-aware routing that picks an agent, model, and effort, then launches it in a Herdr pane"
+platforms = ["linux", "macos"]
+
+# Requires Node.js 20+ and a C/C++ toolchain (better-sqlite3 builds natively).
+[[build]]
+command = ["npm", "ci"]
+
+[[build]]
+command = ["npm", "run", "build", "--workspace", "@model-router/router"]
+
+# Interactive surfaces. Each opens a Herdr pane that runs the router CLI.
+[[panes]]
+id = "route"
+title = "Route a task"
+placement = "overlay"
+command = ["bash", "herdr-plugin/route.sh"]
+
+[[panes]]
+id = "status"
+title = "Router status"
+placement = "overlay"
+command = ["bash", "herdr-plugin/status.sh"]
+
+[[panes]]
+id = "resume"
+title = "Resume router session"
+placement = "overlay"
+command = ["bash", "herdr-plugin/resume.sh"]
+
+[[panes]]
+id = "sessions"
+title = "Router sessions"
+placement = "overlay"
+command = ["bash", "herdr-plugin/sessions.sh"]
+
+# Keybindable actions. The first three open the matching pane; the last two are headless.
+[[actions]]
+id = "route"
+title = "Router: route a task"
+description = "Prompt for a task, then route and launch an agent in a new pane"
+contexts = ["global"]
+command = ["bash", "herdr-plugin/open-pane.sh", "route"]
+
+[[actions]]
+id = "status"
+title = "Router: status"
+description = "Show configured accounts and routing eligibility"
+contexts = ["global"]
+command = ["bash", "herdr-plugin/open-pane.sh", "status"]
+
+[[actions]]
+id = "sessions"
+title = "Router: recent sessions"
+description = "List recent router sessions, newest first"
+contexts = ["global"]
+command = ["bash", "herdr-plugin/open-pane.sh", "sessions"]
+
+[[actions]]
+id = "resume-latest"
+title = "Router: resume latest session"
+description = "Route the next phase of the most recent router session"
+contexts = ["global"]
+command = ["bash", "herdr-plugin/open-pane.sh", "resume"]
+
+[[actions]]
+id = "usage-refresh"
+title = "Router: refresh usage"
+description = "Refresh local-session quota snapshots for every account"
+contexts = ["global"]
+command = ["bash", "herdr-plugin/usage-refresh.sh"]
