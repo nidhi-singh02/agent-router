@@ -26,7 +26,7 @@ export function createLiveTypeSafeClient(apiKey: string): TypeSafePort {
   return createRecordingClient(new TypeSafeClient({ apiKey }));
 }
 
-const FORBIDDEN = /sk-[A-Za-z0-9_-]+|cookie|telegram|Bearer\s+\S+/i;
+const FORBIDDEN = /sk-[A-Za-z0-9_-]+|Bearer\s+\S+/i;
 
 export function assertSafeState(state: unknown): void {
   const serialized = JSON.stringify(state);

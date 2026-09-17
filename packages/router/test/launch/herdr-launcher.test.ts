@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createHerdrClient } from "../../src/launch/herdr-client.js";
 import { launchRoutedAgent } from "../../src/launch/herdr-launcher.js";
+import { buildHandoff, serializeHandoff } from "../../src/handoff/handoff-builder.js";
 
 describe("herdr launcher", () => {
   it("errors clearly outside Herdr", async () => {
@@ -71,5 +72,60 @@ describe("herdr launcher", () => {
     });
     expect(second.ok).toBe(true);
     expect(calls.filter((argv) => argv[1] === "pane" && argv[2] === "split")).toHaveLength(1);
+  });
+
+  it("parses Herdr pane split JSON for result.pane.pane_id", async () => {
+    const herdr = createHerdrClient(async (argv) => {
+      if (argv[1] === "pane") {
+        return {
+          ok: true,
+          code: 0,
+          stdout: JSON.stringify({ result: { pane: { pane_id: "pane_json_1" } } }),
+          stderr: "",
+        };
+      }
+      return { ok: true, code: 0, stdout: "", stderr: "" };
+    });
+    const result = await launchRoutedAgent({
+      env: { HERDR_ENV: "1" },
+      agent: "cursor",
+      launchName: "grok-4.6",
+      effort: "medium",
+      handoff: serializeHandoff(
+        buildHandoff({
+          task: "Implement the approved plan",
+          approvedSpec: "Use the spec",
+          constraints: ["no live deploy"],
+          currentPhase: "implementation",
+          relevantFiles: ["src/a.ts"],
+          completedChecks: ["tests"],
+          remainingAcceptanceCriteria: ["launch"],
+        }),
+      ),
+      dryRun: false,
+      herdr,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.paneId).toBe("pane_json_1");
+  });
+
+  it("falls back to plain-text pane ids when split output is not JSON", async () => {
+    const herdr = createHerdrClient(async (argv) => {
+      if (argv[1] === "pane") {
+        return { ok: true, code: 0, stdout: "pane_plain\n", stderr: "" };
+      }
+      return { ok: true, code: 0, stdout: "", stderr: "" };
+    });
+    const result = await launchRoutedAgent({
+      env: { HERDR_ENV: "1" },
+      agent: "cursor",
+      launchName: "grok-4.6",
+      effort: "medium",
+      handoff: "approved plan",
+      dryRun: false,
+      herdr,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.paneId).toBe("pane_plain");
   });
 });

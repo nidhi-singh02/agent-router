@@ -213,6 +213,84 @@ describe("decision engine", () => {
       ["effort"],
     ]);
   });
+
+  it("maps ranking and effort TypeSafe failures to typesafe-unavailable", async () => {
+    const rankingFail = fakeClient((request) => {
+      if ("family" in request.questions) {
+        return {
+          family: choiceAnswer("implementation", 0.9, { implementation: 1 }),
+          phase: choiceAnswer("implementation", 0.9, { implementation: 1 }),
+          complexity: scoreAnswer(1, 0.8),
+          creativity: scoreAnswer(0, 0.8),
+          consequence: scoreAnswer(1, 0.8),
+          cacheValue: scoreAnswer(1, 0.8),
+        };
+      }
+      throw new Error("ranking down");
+    });
+    await expect(
+      decideRoute({
+        task: "Implement the approved plan.",
+        candidates: eligible,
+        userRequestedUltra: false,
+        client: rankingFail,
+      }),
+    ).resolves.toMatchObject({ status: "typesafe-unavailable" });
+
+    const effortFail = fakeClient((request) => {
+      if ("route" in request.questions) {
+        return { route: choiceAnswer("cand_safe_a", 0.9, { cand_safe_a: 0.9 }) };
+      }
+      if ("effort" in request.questions) {
+        throw new Error("effort down");
+      }
+      return {
+        family: choiceAnswer("implementation", 0.9, { implementation: 1 }),
+        phase: choiceAnswer("implementation", 0.9, { implementation: 1 }),
+        complexity: scoreAnswer(1, 0.8),
+        creativity: scoreAnswer(0, 0.8),
+        consequence: scoreAnswer(1, 0.8),
+        cacheValue: scoreAnswer(1, 0.8),
+      };
+    });
+    await expect(
+      decideRoute({
+        task: "Implement the approved plan.",
+        candidates: eligible,
+        userRequestedUltra: false,
+        client: effortFail,
+      }),
+    ).resolves.toMatchObject({ status: "typesafe-unavailable" });
+  });
+
+  it("allows task text that mentions Telegram or cookie while still excluding secrets", async () => {
+    const client = fakeClient((request) => {
+      const serialized = JSON.stringify(request);
+      expect(serialized).toMatch(/Telegram/);
+      expect(serialized).not.toMatch(/sk-secret-123/);
+      if ("route" in request.questions) {
+        return { route: choiceAnswer("cand_safe_a", 0.91, { cand_safe_a: 0.91 }) };
+      }
+      if ("effort" in request.questions) {
+        return { effort: choiceAnswer("medium", 0.9, { medium: 1 }) };
+      }
+      return {
+        family: choiceAnswer("implementation", 0.9, { implementation: 1 }),
+        phase: choiceAnswer("implementation", 0.9, { implementation: 1 }),
+        complexity: scoreAnswer(1, 0.8),
+        creativity: scoreAnswer(0, 0.8),
+        consequence: scoreAnswer(1, 0.8),
+        cacheValue: scoreAnswer(1, 0.8),
+      };
+    });
+    const decision = await decideRoute({
+      task: "Tell the team on Telegram after the cookie banner copy is approved.",
+      candidates: eligible,
+      userRequestedUltra: false,
+      client,
+    });
+    expect(decision.status).toBe("selected");
+  });
 });
 
 describe("evaluation fixtures", () => {

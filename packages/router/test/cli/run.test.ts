@@ -188,4 +188,37 @@ describe("router run", () => {
     expect(result.code).toBe(0);
     expect(client.calls.length).toBeGreaterThan(0);
   });
+
+  it("sends the complete structured handoff rather than only the task field", async () => {
+    const prompts: string[] = [];
+    const herdr = createHerdrClient(async (argv) => {
+      if (argv[1] === "agent" && argv[2] === "prompt") {
+        prompts.push(argv[4] ?? "");
+      }
+      return { ok: true, code: 0, stdout: "pane_abc\n", stderr: "" };
+    });
+    const result = await executeRun(
+      "Implement the approved plan.",
+      { dryRun: false },
+      {
+        accounts: [personal],
+        models: [cursorModel],
+        usage: { [personal.id]: usageFor(personal.id, 0.8) },
+        client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
+        env: { HERDR_ENV: "1" },
+        now,
+        herdr,
+      },
+    );
+    expect(result.code).toBe(0);
+    expect(prompts).toHaveLength(1);
+    const payload = JSON.parse(prompts[0] ?? "{}") as {
+      phase?: string;
+      task?: string;
+      constraints?: string[];
+    };
+    expect(payload.phase).toBe("implementation");
+    expect(payload.task).toMatch(/Implement the approved plan/);
+    expect(payload.constraints).toContain("Do not deploy or consume extra quota.");
+  });
 });

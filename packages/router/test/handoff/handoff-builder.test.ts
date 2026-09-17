@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildHandoff } from "../../src/handoff/handoff-builder.js";
+import { buildHandoff, serializeHandoff } from "../../src/handoff/handoff-builder.js";
 
 describe("handoff builder", () => {
   it("includes the required structured fields and redacts secrets", () => {
@@ -17,5 +17,25 @@ describe("handoff builder", () => {
     expect(handoff.relevantFiles).toContain("packages/router/src/store/database.ts");
     expect(handoff.constraints).toContain("no live deploy");
     expect(JSON.stringify(handoff)).not.toMatch(/unrelated session history/i);
+  });
+
+  it("serializes the complete structured handoff", () => {
+    const handoff = buildHandoff({
+      task: "Implement the session store",
+      approvedSpec: "SQLite locally",
+      constraints: ["no live deploy"],
+      currentPhase: "implementation",
+      relevantFiles: ["packages/router/src/store/database.ts"],
+      completedChecks: ["unit tests"],
+      remainingAcceptanceCriteria: ["dry-run launch"],
+    });
+    const serialized = serializeHandoff(handoff);
+    const parsed = JSON.parse(serialized) as Record<string, unknown>;
+    expect(parsed.phase).toBe("implementation");
+    expect(parsed.task).toMatch(/Implement the session store/);
+    expect(parsed.constraints).toEqual(["no live deploy"]);
+    expect(parsed.relevantFiles).toEqual(["packages/router/src/store/database.ts"]);
+    expect(parsed.completedChecks).toEqual(["unit tests"]);
+    expect(parsed.remainingAcceptanceCriteria).toEqual(["dry-run launch"]);
   });
 });

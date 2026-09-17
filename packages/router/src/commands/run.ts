@@ -5,7 +5,7 @@ import type { TypeSafePort } from "../semantic/typesafe-client.js";
 import { formatDecisionCard } from "../presentation/decision-card.js";
 import { launchRoutedAgent } from "../launch/herdr-launcher.js";
 import type { HerdrClient } from "../launch/herdr-client.js";
-import { buildHandoff } from "../handoff/handoff-builder.js";
+import { buildHandoff, serializeHandoff } from "../handoff/handoff-builder.js";
 import type { Account } from "../domain/account.js";
 import type { ModelProfile } from "../domain/model-profile.js";
 import type { UsageSnapshot } from "../domain/usage.js";
@@ -159,7 +159,7 @@ export async function executeRun(
     agent: selected.model.agent,
     launchName: selected.model.launchName,
     effort: decision.effort,
-    handoff: handoff.task,
+    handoff: serializeHandoff(handoff),
     dryRun: options.dryRun,
     herdr: deps.herdr,
     existingLaunchToken: deps.existingLaunchToken,

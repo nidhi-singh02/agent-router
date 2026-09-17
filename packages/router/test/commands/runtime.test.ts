@@ -6,7 +6,17 @@ import { createDefaultRunDeps } from "../../src/commands/runtime.js";
 import type { UsageCollector } from "../../src/collectors/types.js";
 import type { TypeSafePort } from "../../src/semantic/typesafe-client.js";
 import type { HerdrClient } from "../../src/launch/herdr-client.js";
+import { accountFingerprint } from "@model-router/hermes-heartbeat";
 import { personal, usageFor } from "../cli/fixtures.js";
+
+const idleCollectors: UsageCollector[] = [
+  {
+    kind: "official-cli",
+    detectAccounts: async () => [],
+    collectUsage: async (account) => usageFor(account.id, 0.8),
+    listAvailableModels: async () => [],
+  },
+];
 
 function homeWithAccount(): string {
   const home = mkdtempSync(path.join(os.tmpdir(), "router-runtime-"));
@@ -53,7 +63,7 @@ describe("createDefaultRunDeps", () => {
     const createTypeSafeClient = vi.fn(stubTypeSafe);
     const deps = await createDefaultRunDeps(
       { MODEL_ROUTER_HOME: homeWithAccount() },
-      { createTypeSafeClient },
+      { createTypeSafeClient, collectorsForAccount: () => idleCollectors },
     );
     expect(createTypeSafeClient).not.toHaveBeenCalled();
     await expect(deps.client.systemOne({ questions: {}, state: {} } as never)).rejects.toThrow(
@@ -71,7 +81,7 @@ describe("createDefaultRunDeps", () => {
         TYPESAFE_API_KEY: dummyKey,
         CURSOR_API_KEY: "sk-secret-123",
       },
-      { createTypeSafeClient },
+      { createTypeSafeClient, collectorsForAccount: () => idleCollectors },
     );
     expect(createTypeSafeClient).toHaveBeenCalledTimes(1);
     expect(createTypeSafeClient).toHaveBeenCalledWith(dummyKey);
@@ -92,7 +102,7 @@ describe("createDefaultRunDeps", () => {
     const createHerdr = vi.fn(() => stubHerdr());
     const deps = await createDefaultRunDeps(
       { MODEL_ROUTER_HOME: homeWithAccount() },
-      { createProcessAdapter, createHerdr },
+      { createProcessAdapter, createHerdr, collectorsForAccount: () => idleCollectors },
     );
     expect(createProcessAdapter).not.toHaveBeenCalled();
     expect(createHerdr).not.toHaveBeenCalled();
@@ -106,7 +116,7 @@ describe("createDefaultRunDeps", () => {
     const createHerdr = vi.fn(() => herdr);
     const deps = await createDefaultRunDeps(
       { MODEL_ROUTER_HOME: homeWithAccount(), HERDR_ENV: "1" },
-      { createProcessAdapter, createHerdr },
+      { createProcessAdapter, createHerdr, collectorsForAccount: () => idleCollectors },
     );
     expect(createProcessAdapter).toHaveBeenCalledTimes(1);
     expect(createHerdr).toHaveBeenCalledWith(adapter);
@@ -134,8 +144,65 @@ describe("createDefaultRunDeps", () => {
   });
 
   it("always attaches an activity client so shared activity can run before eligibility", async () => {
-    const deps = await createDefaultRunDeps({ MODEL_ROUTER_HOME: homeWithAccount() });
+    const deps = await createDefaultRunDeps(
+      { MODEL_ROUTER_HOME: homeWithAccount() },
+      { collectorsForAccount: () => idleCollectors },
+    );
     expect(deps.activityClient).toBeDefined();
-    await expect(deps.activityClient!.status("acct_shared")).resolves.toBeDefined();
+    await expect(deps.activityClient!.status("acct_shared")).resolves.toBe("unreachable");
+  });
+
+  it("constrains shared accounts when no heartbeat coordinator is configured", async () => {
+    const deps = await createDefaultRunDeps(
+      { MODEL_ROUTER_HOME: homeWithAccount() },
+      { collectorsForAccount: () => idleCollectors },
+    );
+    await expect(deps.activityClient!.status("acct_shared")).resolves.toBe("unreachable");
+  });
+
+  it("looks up coordinator status with an HMAC fingerprint and never a raw account id", async () => {
+    const secret = "test-fingerprint-secret";
+    const home = mkdtempSync(path.join(os.tmpdir(), "router-runtime-"));
+    writeFileSync(
+      path.join(home, "config.json"),
+      JSON.stringify({
+        accounts: [
+          {
+            id: personal.id,
+            label: personal.label,
+            provider: personal.provider,
+            agent: personal.agent,
+            ownership: personal.ownership,
+            collectorPreference: ["official-cli"],
+            enabledModels: personal.enabledModels,
+            enabled: true,
+            credentialRef: "env:CURSOR_API_KEY",
+          },
+        ],
+        coordinator: {
+          url: "https://coordinator.example.invalid",
+          readerCredentialRef: "env:COORDINATOR_READER_TOKEN",
+        },
+      }),
+    );
+    const urls: string[] = [];
+    const deps = await createDefaultRunDeps(
+      {
+        MODEL_ROUTER_HOME: home,
+        COORDINATOR_READER_TOKEN: "reader-token",
+        HEARTBEAT_FINGERPRINT_SECRET: secret,
+      },
+      {
+        collectorsForAccount: () => idleCollectors,
+        fetchImpl: async (input) => {
+          urls.push(String(input));
+          return new Response(JSON.stringify({ activity: "inactive" }), { status: 200 });
+        },
+      },
+    );
+    await deps.activityClient!.status("acct_shared");
+    expect(urls).toHaveLength(1);
+    expect(urls[0]).not.toContain("acct_shared");
+    expect(urls[0]).toContain(accountFingerprint("acct_shared", secret));
   });
 });

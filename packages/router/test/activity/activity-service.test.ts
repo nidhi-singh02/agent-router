@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { accountFingerprint } from "@model-router/hermes-heartbeat";
 import { readSharedActivity } from "../../src/activity/activity-service.js";
 
 const account = {
@@ -14,6 +15,24 @@ describe("activity service", () => {
     const result = await readSharedActivity({ account, client });
     expect(result.ownerMessage).toBe("shared subscription currently active");
     expect(JSON.stringify(result)).not.toMatch(/telegram|friend|@/i);
+  });
+
+  it("derives the coordinator lookup key with the HMAC fingerprint contract", async () => {
+    const secret = "test-fingerprint-secret";
+    const seen: string[] = [];
+    const result = await readSharedActivity({
+      account,
+      fingerprintSecret: secret,
+      client: {
+        status: async (lookup) => {
+          seen.push(lookup);
+          return "inactive";
+        },
+      },
+    });
+    expect(result.activity).toBe("inactive");
+    expect(seen).toEqual([accountFingerprint(account.id, secret)]);
+    expect(seen[0]).not.toContain("acct_shared");
   });
 
   it("treats outages conservatively for shared accounts", async () => {

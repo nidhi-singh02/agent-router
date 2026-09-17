@@ -5,6 +5,26 @@ import { buildAgentCommand, herdrAgentKind } from "./agent-command.js";
 import { createHerdrClient, type HerdrClient } from "./herdr-client.js";
 import { isHerdrEnv } from "./readiness.js";
 
+export function parseHerdrPaneId(stdout: string): string | undefined {
+  const trimmed = stdout.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  try {
+    const data = JSON.parse(trimmed) as {
+      result?: { pane?: { pane_id?: unknown } };
+      pane?: { pane_id?: unknown };
+    };
+    const id = data.result?.pane?.pane_id ?? data.pane?.pane_id;
+    if (typeof id === "string" && id.length > 0) {
+      return id;
+    }
+  } catch {
+    // Fall back to the first token of plain-text Herdr output.
+  }
+  return trimmed.split(/\s+/)[0];
+}
+
 export interface LaunchResult {
   ok: boolean;
   error?: string;
@@ -53,7 +73,7 @@ export async function launchRoutedAgent(input: {
     if (!split.ok) {
       return { ok: false, error: split.stderr || "herdr pane split failed", launchToken };
     }
-    paneId = split.stdout.trim().split(/\s+/)[0];
+    paneId = parseHerdrPaneId(split.stdout);
     if (!paneId) {
       return { ok: false, error: "herdr pane split did not return a pane id", launchToken };
     }

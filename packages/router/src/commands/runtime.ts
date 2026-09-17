@@ -14,6 +14,9 @@ import {
 } from "../launch/herdr-client.js";
 import { isHerdrEnv } from "../launch/readiness.js";
 import { createCoordinatorClient, type CoordinatorClient } from "../activity/coordinator-client.js";
+import { accountFingerprint } from "@model-router/hermes-heartbeat";
+import { createBrowserDashboardCollector } from "../collectors/browser/dashboard-collector.js";
+import { runCommand } from "../collectors/command-runner.js";
 
 function unavailableTypeSafe(): TypeSafePort {
   return {
@@ -53,24 +56,33 @@ export interface RuntimeOverrides {
   createHerdr?: (runCommand: RunCommand) => HerdrClient;
   collectorsForAccount?: (account: Account) => UsageCollector[];
   activityClient?: CoordinatorClient;
+  fetchImpl?: typeof fetch;
+  runCommand?: typeof runCommand;
+  fetchDashboardHtml?: (provider: Account["provider"]) => Promise<string>;
 }
 
-function defaultActivityClient(env: NodeJS.Dict<string>): CoordinatorClient {
+function defaultActivityClient(
+  env: NodeJS.Dict<string>,
+  fetchImpl?: typeof fetch,
+): CoordinatorClient {
   const config = loadConfig({ env });
   const token = resolveEnvCredential(config.coordinator?.readerCredentialRef, env);
-  if (config.coordinator?.url && token) {
-    return createCoordinatorClient({ baseUrl: config.coordinator.url, readerToken: token });
-  }
-  if (config.coordinator?.url) {
+  const fingerprintSecret = env.HEARTBEAT_FINGERPRINT_SECRET;
+  if (!config.coordinator?.url || !token || !fingerprintSecret) {
     return {
       async status() {
         return "unreachable";
       },
     };
   }
+  const inner = createCoordinatorClient({
+    baseUrl: config.coordinator.url,
+    readerToken: token,
+    fetchImpl,
+  });
   return {
-    async status() {
-      return "inactive";
+    async status(accountId: string) {
+      return inner.status(accountFingerprint(accountId, fingerprintSecret));
     },
   };
 }
@@ -81,7 +93,16 @@ export async function createDefaultRunDeps(
 ): Promise<RunDeps> {
   const config = loadConfig({ env });
   const catalog = loadModelCatalog();
-  const resolveCollectors = overrides.collectorsForAccount ?? defaultCollectorsForAccount;
+  const resolveCollectors =
+    overrides.collectorsForAccount ??
+    ((account: Account) =>
+      defaultCollectorsForAccount(account, {
+        runCommand: overrides.runCommand,
+        browserCollector: createBrowserDashboardCollector({
+          approvedBridge: env.MODEL_ROUTER_BROWSER_BRIDGE === "1",
+          fetchHtml: overrides.fetchDashboardHtml,
+        }),
+      }));
   const usage: RunDeps["usage"] = {};
   for (const account of config.accounts) {
     usage[account.id] = await collectUsageChain(account, resolveCollectors(account));
@@ -103,6 +124,6 @@ export async function createDefaultRunDeps(
     client,
     env: sanitizeRuntimeEnv(env),
     herdr,
-    activityClient: overrides.activityClient ?? defaultActivityClient(env),
+    activityClient: overrides.activityClient ?? defaultActivityClient(env, overrides.fetchImpl),
   };
 }

@@ -109,10 +109,21 @@ export async function decideRoute(input: DecideRouteInput): Promise<RouteDecisio
   };
   assertSafeState(rankingState);
 
-  const ranking = await input.client.systemOne({
-    state: rankingState,
-    questions: { route: routeQuestion(input.candidates) },
-  });
+  let ranking;
+  try {
+    ranking = await input.client.systemOne({
+      state: rankingState,
+      questions: { route: routeQuestion(input.candidates) },
+    });
+  } catch {
+    return {
+      status: "typesafe-unavailable",
+      fallback: deterministicFallback({
+        family,
+        candidates: input.candidates,
+      }),
+    };
+  }
   const route = ranking.answers.route as ChoiceResponse;
   if (!eligibleIds.includes(route.choice)) {
     return { status: "invalid-choice" };
@@ -134,16 +145,29 @@ export async function decideRoute(input: DecideRouteInput): Promise<RouteDecisio
   if (!selected) {
     return { status: "invalid-choice" };
   }
-  const effortResponse = await input.client.systemOne({
-    state: {
-      task: input.task,
-      family,
-      phase,
-      complexity: classification.answers.complexity.score,
-      creativity: classification.answers.creativity.score,
-    },
-    questions: { effort: effortQuestion([...selected.supportedEfforts], input.userRequestedUltra) },
-  });
+  let effortResponse;
+  try {
+    effortResponse = await input.client.systemOne({
+      state: {
+        task: input.task,
+        family,
+        phase,
+        complexity: classification.answers.complexity.score,
+        creativity: classification.answers.creativity.score,
+      },
+      questions: {
+        effort: effortQuestion([...selected.supportedEfforts], input.userRequestedUltra),
+      },
+    });
+  } catch {
+    return {
+      status: "typesafe-unavailable",
+      fallback: deterministicFallback({
+        family,
+        candidates: input.candidates,
+      }),
+    };
+  }
   const effort = effortResponse.answers.effort.choice as ReasoningEffort;
   if (effort === "ultra" && !input.userRequestedUltra) {
     return { status: "invalid-choice" };

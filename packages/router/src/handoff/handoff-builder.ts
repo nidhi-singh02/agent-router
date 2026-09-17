@@ -21,3 +21,7 @@ export function buildHandoff(input: {
     createdAt: new Date().toISOString(),
   });
 }
+
+export function serializeHandoff(handoff: Handoff): string {
+  return redactCollectorText(JSON.stringify(handoff));
+}
