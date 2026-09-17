@@ -21,7 +21,8 @@ export interface HerdrClient {
 }
 
 export function createProcessCommandAdapter(options: { timeoutMs?: number } = {}): RunCommand {
-  const timeoutMs = options.timeoutMs ?? 30_000;
+  // Longer than Herdr's 30s agent start timeout, so Herdr reports its own error first.
+  const timeoutMs = options.timeoutMs ?? 60_000;
   return (argv) =>
     new Promise((resolve) => {
       const [command, ...args] = argv;

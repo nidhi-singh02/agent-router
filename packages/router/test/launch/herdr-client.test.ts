@@ -31,7 +31,7 @@ describe("herdr command adapter", () => {
       name: "router-cursor",
       kind: "cursor",
       paneId: "pane_abc",
-      agentArgs: ["agent", "--model", "cursor-grok-4.6-medium"],
+      agentArgs: ["--model", "cursor-grok-4.6-medium"],
     });
     expect(calls[0]).toEqual([
       "herdr",
@@ -43,7 +43,6 @@ describe("herdr command adapter", () => {
       "--pane",
       "pane_abc",
       "--",
-      "agent",
       "--model",
       "cursor-grok-4.6-medium",
     ]);
