@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { collectUsageChain } from "../../src/collectors/collector-chain.js";
 import type { UsageCollector } from "../../src/collectors/types.js";
 import { AccountSchema } from "../../src/domain/account.js";
+import { evaluateEligibility } from "../../src/policy/eligibility.js";
+import { isFresh } from "../../src/policy/freshness.js";
+import { cursorModel } from "../cli/fixtures.js";
 
 const account = AccountSchema.parse({
   id: "acct_1",
@@ -101,5 +104,28 @@ describe("collector chain", () => {
     expect(result.certainty).toBe("unknown");
     expect(result.windows[0]?.remainingRatio).toBeUndefined();
     expect(result.source).toBe("browser-dashboard");
+  });
+
+  it("keeps the unknown fallback fresh so personal accounts are not excluded as stale", async () => {
+    const result = await collectUsageChain(account, [
+      collector("cli", {
+        kind: "official-cli",
+        collectUsage: async () => {
+          throw new Error("cli exploded");
+        },
+      }),
+    ]);
+    const now = new Date();
+    expect(result.certainty).toBe("unknown");
+    expect(isFresh(result, now)).toBe(true);
+    expect(
+      evaluateEligibility({
+        account,
+        model: cursorModel,
+        usage: result,
+        estimatedCostRatio: 0.1,
+        now,
+      }).eligible,
+    ).toBe(true);
   });
 });
