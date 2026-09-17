@@ -74,6 +74,36 @@ describe("sqlite store", () => {
     db.close();
   });
 
+  it("lists sessions newest first and returns the latest", () => {
+    const db = openTestDb();
+    const sessions = new SessionRepository(db);
+    for (const [id, at] of [
+      ["sess_old", "2026-09-17T09:00:00.000Z"],
+      ["sess_new", "2026-09-17T10:00:00.000Z"],
+      ["sess_mid", "2026-09-17T09:30:00.000Z"],
+    ] as const) {
+      sessions.save({
+        id,
+        task: "task",
+        phase: "implementation",
+        reservations: [],
+        handoffs: [],
+        createdAt: at,
+        updatedAt: at,
+      });
+    }
+    expect(sessions.latest()?.id).toBe("sess_new");
+    expect(sessions.list(2).map((session) => session.id)).toEqual(["sess_new", "sess_mid"]);
+    db.close();
+  });
+
+  it("returns no latest session for an empty store", () => {
+    const db = openTestDb();
+    expect(new SessionRepository(db).latest()).toBeUndefined();
+    expect(new SessionRepository(db).list(5)).toEqual([]);
+    db.close();
+  });
+
   it("stores redacted audit events without raw secrets", () => {
     const db = openTestDb();
     const audit = new AuditRepository(db);

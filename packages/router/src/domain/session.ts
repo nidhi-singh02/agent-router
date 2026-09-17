@@ -42,11 +42,23 @@ export const CacheAffinitySchema = z.object({
   promptPrefixHash: z.string().min(1),
 });
 
+export const SessionRouteSchema = z.object({
+  accountId: AccountIdSchema,
+  modelId: z.string().min(1),
+  agent: z.string().min(1),
+  launchName: z.string().min(1),
+  effort: ReasoningEffortSchema,
+  reason: z.string().min(1),
+  status: z.enum(["launched", "launch-failed"]),
+  launchToken: z.string().min(1).optional(),
+  error: z.string().min(1).optional(),
+});
+
 export const RouterSessionSchema = z.object({
   id: SessionIdSchema,
   task: z.string().min(1),
   phase: WorkflowPhaseSchema,
-  route: z.unknown().optional(),
+  route: SessionRouteSchema.optional(),
   cacheAffinity: CacheAffinitySchema.optional(),
   reservations: z.array(ReservationSchema),
   handoffs: z.array(HandoffSchema),
@@ -59,4 +71,5 @@ export type WorkflowPhase = z.infer<typeof WorkflowPhaseSchema>;
 export type Reservation = z.infer<typeof ReservationSchema>;
 export type Handoff = z.infer<typeof HandoffSchema>;
 export type CacheAffinity = z.infer<typeof CacheAffinitySchema>;
+export type SessionRoute = z.infer<typeof SessionRouteSchema>;
 export type RouterSession = z.infer<typeof RouterSessionSchema>;

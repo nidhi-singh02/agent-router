@@ -4,7 +4,7 @@ Commands:
 
 - `router run "<task>" [--dry-run] [--json]`
 - `router status`
-- `router session`
+- `router session [id] [--list] [--limit <n>] [--json]` (latest launched session by default; dry runs are not recorded)
 - `router accounts`
 - `router usage refresh [--source official-cli|browser] [--dry-run]`
 

@@ -38,8 +38,18 @@ describe("agent commands", () => {
     ).toEqual(["claude", "--model", "sonnet", "--effort", "high"]);
   });
 
-  it("starts Codex with --model and no unverified reasoning flag", () => {
+  it("starts Codex with --model and the chosen reasoning effort", () => {
     expect(buildAgentCommand({ agent: "codex", launchName: "codex", effort: "medium" })).toEqual([
+      "codex",
+      "--model",
+      "codex",
+      "-c",
+      'model_reasoning_effort="medium"',
+    ]);
+    expect(
+      buildAgentCommand({ agent: "codex", launchName: "codex", effort: "ultra" }).slice(-2),
+    ).toEqual(["-c", 'model_reasoning_effort="xhigh"']);
+    expect(buildAgentCommand({ agent: "codex", launchName: "codex", effort: "none" })).toEqual([
       "codex",
       "--model",
       "codex",

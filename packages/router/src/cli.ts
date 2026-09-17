@@ -4,7 +4,11 @@ import { fileURLToPath } from "node:url";
 import { Command, CommanderError } from "commander";
 import { executeRun, type RunDeps } from "./commands/run.js";
 import { formatStatus } from "./commands/status.js";
-import { formatSession } from "./commands/session.js";
+import { formatSession, formatSessionList } from "./commands/session.js";
+import { openDatabase } from "./store/database.js";
+import { SessionRepository } from "./store/session-repository.js";
+
+const NO_SESSIONS = "No router sessions yet. Sessions are recorded when `router run` launches.\n";
 import { formatAccounts } from "./commands/accounts.js";
 import { usageRefresh } from "./commands/usage.js";
 import { loadConfig } from "./config/config-loader.js";
@@ -76,9 +80,45 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
       program.exitCode = 1;
     }
   });
-  program.command("session").action(() => {
-    stdout.write(`${formatSession({ id: "none", phase: "none" })}\n`);
-  });
+  program
+    .command("session")
+    .argument("[id]", "Session id (defaults to the latest session)")
+    .option("--list", "List recent sessions, newest first", false)
+    .option("--limit <n>", "How many sessions --list shows", "20")
+    .option("--json", "Emit JSON for plugins", false)
+    .action((id: string | undefined, flags: { list?: boolean; limit: string; json?: boolean }) => {
+      let db;
+      try {
+        db = openDatabase({ home: loadConfig({ env }).home });
+        const sessions = new SessionRepository(db);
+        if (flags.list) {
+          const limit = Math.max(1, Number.parseInt(flags.limit, 10) || 20);
+          const listed = sessions.list(limit);
+          if (flags.json) {
+            stdout.write(`${JSON.stringify(listed)}\n`);
+          } else {
+            stdout.write(listed.length > 0 ? `${formatSessionList(listed)}\n` : NO_SESSIONS);
+          }
+          return;
+        }
+        const session = id ? sessions.get(id) : sessions.latest();
+        if (!session) {
+          if (id) {
+            stderr.write(`Session not found: ${id}\n`);
+            program.exitCode = 1;
+          } else {
+            stdout.write(flags.json ? "null\n" : NO_SESSIONS);
+          }
+          return;
+        }
+        stdout.write(`${flags.json ? JSON.stringify(session) : formatSession(session)}\n`);
+      } catch (error) {
+        stderr.write(`${formatError(error)}\n`);
+        program.exitCode = 1;
+      } finally {
+        db?.close();
+      }
+    });
   program.command("accounts").action(() => {
     try {
       const config = loadConfig({ env });
