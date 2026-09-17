@@ -14,6 +14,10 @@ platforms = ["linux", "macos"]
 [[build]]
 command = ["npm", "ci"]
 
+# hermes-heartbeat first: the router imports its built type declarations.
+[[build]]
+command = ["npm", "run", "build", "--workspace", "@model-router/hermes-heartbeat"]
+
 [[build]]
 command = ["npm", "run", "build", "--workspace", "@model-router/router"]
 
