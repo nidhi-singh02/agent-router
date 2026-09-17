@@ -19,6 +19,7 @@ import { estimateTaskCostRatio } from "../policy/cost-estimator.js";
 import { ReservationService } from "../reservations/reservation-service.js";
 import { readSharedActivity } from "../activity/activity-service.js";
 import type { CoordinatorClient } from "../activity/coordinator-client.js";
+import { cacheAffinityKey } from "../sessions/cache-affinity.js";
 
 export interface RunDeps {
   accounts: Account[];
@@ -128,6 +129,13 @@ export async function executeRun(
       projectedRemainingRatio: item.projectedRemainingRatio,
       capabilities: item.model.capabilities,
     })),
+    previousRoute: previous?.route
+      ? {
+          opaqueId: `${previous.route.accountId}:${previous.route.modelId}`,
+          phase: previous.phase,
+          effort: previous.route.effort,
+        }
+      : undefined,
   });
   if (decision.status === "ask-user") {
     return {
@@ -205,6 +213,14 @@ export async function executeRun(
   });
   if (sessionId && deps.sessions) {
     const startedAt = new Date().toISOString();
+    const affinityInput = {
+      provider: selected.account.provider,
+      modelId: selected.model.id,
+      effort: decision.effort,
+      agent: selected.model.agent,
+      promptPrefix: task.slice(0, 80),
+    };
+    const key = cacheAffinityKey(affinityInput);
     const session = RouterSessionSchema.parse({
       id: sessionId,
       previousSessionId: previous?.id,
@@ -221,6 +237,13 @@ export async function executeRun(
         launchToken: launch.launchToken,
         agentName: launch.agentName,
         error: launch.ok ? undefined : redactCollectorText(launch.error ?? "launch failed"),
+      },
+      cacheAffinity: {
+        provider: selected.account.provider,
+        modelId: selected.model.id,
+        effort: decision.effort,
+        agent: selected.model.agent,
+        promptPrefixHash: key.slice(key.lastIndexOf(":") + 1),
       },
       reservations: [
         {
@@ -252,7 +275,13 @@ export async function executeRun(
         ? "shared subscription currently active"
         : undefined),
     reservePolicy: selected.account.ownership === "shared" ? "40% protected" : "personal account",
-    cacheDecision: "phase sticky unless eligibility changes",
+    cacheDecision: decision.sticky
+      ? "reused previous route (same phase)"
+      : previous
+        ? previous.phase !== decision.phase
+          ? "phase change justifies a structured handoff"
+          : "previous route ineligible; re-ranked"
+        : "no previous session",
     usageSource: !snapshot
       ? "unknown"
       : snapshot.source === "skipped"

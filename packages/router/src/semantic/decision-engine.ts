@@ -10,6 +10,7 @@ import { routeQuestion } from "./route-ranker.js";
 import { taskFamilyQuestion } from "./task-classifier.js";
 import { complexityQuestion, consequenceQuestion, creativityQuestion } from "./task-scorer.js";
 import { assertSafeState, type TypeSafePort } from "./typesafe-client.js";
+import { shouldReconsiderRoute } from "../sessions/phase-transition.js";
 
 export type { SemanticCandidate } from "./candidate.js";
 
@@ -18,6 +19,11 @@ export interface DecideRouteInput {
   candidates: SemanticCandidate[];
   userRequestedUltra: boolean;
   client: TypeSafePort;
+  previousRoute?: {
+    opaqueId: string;
+    phase: WorkflowPhase;
+    effort: ReasoningEffort;
+  };
 }
 
 export type RouteDecisionResult =
@@ -29,6 +35,7 @@ export type RouteDecisionResult =
       family: string;
       confidence: number;
       reason: string;
+      sticky: boolean;
     }
   | {
       status: "ask-user";
@@ -91,6 +98,32 @@ export async function decideRoute(input: DecideRouteInput): Promise<RouteDecisio
 
   const family = classification.answers.family.choice;
   const phase = classification.answers.phase.choice as WorkflowPhase;
+  const previous = input.previousRoute;
+  const previousCandidate = previous
+    ? input.candidates.find((candidate) => candidate.opaqueId === previous.opaqueId)
+    : undefined;
+  const routeStillEligible = Boolean(
+    previousCandidate?.supportedEfforts.includes(previous!.effort),
+  );
+  if (
+    previous &&
+    !shouldReconsiderRoute({
+      currentPhase: previous.phase,
+      nextPhase: phase,
+      routeStillEligible,
+    })
+  ) {
+    return {
+      status: "selected",
+      candidateOpaqueId: previous.opaqueId,
+      effort: previous.effort,
+      phase,
+      family,
+      confidence: 1,
+      reason: `reused previous route ${previous.opaqueId} (same phase)`,
+      sticky: true,
+    };
+  }
   const rankingState = {
     task: input.task,
     family,
@@ -180,6 +213,7 @@ export async function decideRoute(input: DecideRouteInput): Promise<RouteDecisio
     family,
     confidence: route.confidence,
     reason: `TypeSafe selected ${selected.opaqueId} for ${family} in phase ${phase}`,
+    sticky: false,
   };
 }
 

@@ -18,10 +18,9 @@ import { createCoordinatorClient, type CoordinatorClient } from "../activity/coo
 import { accountFingerprint } from "@model-router/hermes-heartbeat";
 import { createBrowserDashboardCollector } from "../collectors/browser/dashboard-collector.js";
 import { runCommand } from "../collectors/command-runner.js";
-import { normalizeUsage } from "../collectors/normalizer.js";
-import type { UsageSnapshot } from "../domain/usage.js";
 import { openDatabase } from "../store/database.js";
 import { SessionRepository } from "../store/session-repository.js";
+import { UsageRepository } from "../store/usage-repository.js";
 
 function unavailableTypeSafe(): TypeSafePort {
   return {
@@ -95,20 +94,18 @@ export interface RuntimeOverrides {
   fetchDashboardHtml?: (provider: Account["provider"]) => Promise<string>;
   sessions?: RunDeps["sessions"];
   readKeychain?: KeychainReader;
-  /** Skip every usage collector (router run without --usage); usage is reported as skipped. */
-  skipUsage?: boolean;
+  /** Default `"local"`: only `local-session` collectors. `"full"`: official, local, and browser. */
+  usageMode?: "local" | "full";
 }
 
-function skippedUsage(account: Account): UsageSnapshot {
-  const now = Date.now();
-  return normalizeUsage({
-    accountId: account.id,
-    windows: [{ kind: "five-hour" }],
-    collectedAt: new Date(now).toISOString(),
-    source: "skipped",
-    certainty: "unknown",
-    expiresAt: new Date(now + 60_000).toISOString(),
-  });
+function filterCollectors(
+  collectors: UsageCollector[],
+  usageMode: "local" | "full",
+): UsageCollector[] {
+  if (usageMode === "full") {
+    return collectors;
+  }
+  return collectors.filter((collector) => collector.kind === "local-session");
 }
 
 function defaultActivityClient(
@@ -153,16 +150,22 @@ export async function createDefaultRunDeps(
           fetchHtml: overrides.fetchDashboardHtml,
         }),
       }));
+  const usageMode = overrides.usageMode ?? "local";
   const snapshots = await Promise.all(
     config.accounts.map((account) =>
-      overrides.skipUsage
-        ? skippedUsage(account)
-        : collectUsageChain(account, resolveCollectors(account)),
+      collectUsageChain(account, filterCollectors(resolveCollectors(account), usageMode)),
     ),
   );
   const usage: RunDeps["usage"] = Object.fromEntries(
     config.accounts.map((account, index) => [account.id, snapshots[index]!]),
   );
+  const db = openDatabase({ home: config.home });
+  const usageRepo = new UsageRepository(db);
+  for (const snapshot of snapshots) {
+    if (snapshot.certainty !== "unknown") {
+      usageRepo.save(snapshot);
+    }
+  }
   // The configured reference (for example keychain:model-router-typesafe) works in every
   // pane without exporting the key; TYPESAFE_API_KEY remains a fallback.
   const apiKeyRef = config.typesafe?.apiKeyRef;
@@ -186,7 +189,7 @@ export async function createDefaultRunDeps(
   }
   return {
     typesafeKeyHint,
-    sessions: overrides.sessions ?? new SessionRepository(openDatabase({ home: config.home })),
+    sessions: overrides.sessions ?? new SessionRepository(db),
     accounts: config.accounts,
     models: catalog.models.filter((model) =>
       config.accounts.some((account) => account.enabledModels.includes(model.id)),

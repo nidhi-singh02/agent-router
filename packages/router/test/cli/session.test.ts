@@ -210,9 +210,33 @@ describe("phase handoffs between router sessions", () => {
       `Previous phase: planning (session ${planningId}): Plan the billing feature.`,
     );
     expect(result.output).toContain(`Previous session: ${planningId} (planning -> implementation)`);
+    expect(result.output).toMatch(/Cache decision: phase change justifies a structured handoff/);
 
     const shown = await cli(deps.home, ["session", nextId]);
     expect(shown.out).toContain(`Previous session: ${planningId}`);
+    db.close();
+  });
+
+  it("reuses the previous route when the next task stays in the same phase", async () => {
+    const { db, deps } = runDeps(tempHome(), { HERDR_ENV: "1" });
+    const first = await executeRun("Implement the billing repository.", { dryRun: false }, deps);
+    const firstId = (first.json as { sessionId: string }).sessionId;
+    deps.sessions.save({ ...deps.sessions.get(firstId)!, phase: "implementation" });
+    const second = await executeRun(
+      "Continue implementing the billing repository.",
+      { dryRun: false, previousSessionId: firstId },
+      deps,
+    );
+    expect(second.code).toBe(0);
+    expect(second.output).toMatch(/Cache decision: reused previous route \(same phase\)/);
+    expect(second.json).toMatchObject({
+      selected: `${personal.id}:${cursorModel.id}`,
+      effort: "medium",
+    });
+    const rankingCalls = (deps.client.calls as { questions: object }[]).filter(
+      (call) => "route" in call.questions,
+    );
+    expect(rankingCalls).toHaveLength(1);
     db.close();
   });
 

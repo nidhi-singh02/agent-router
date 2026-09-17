@@ -60,6 +60,7 @@ describe("router run", () => {
     expect(result.code).toBe(0);
     expect(result.output).toMatch(/Selected: cursor \/ grok-4\.6 \/ medium/);
     expect(result.output).toMatch(/Phase: implementation/);
+    expect(result.output).toMatch(/Cache decision: no previous session/);
     expect(result.output).toMatch(/Usage source:/);
     expect(result.output).toMatch(/exact/);
     expect(result.output).toMatch(/cursor-grok-4\.6-medium/);
@@ -372,7 +373,7 @@ describe("router run", () => {
     expect(result.output).not.toContain("Quota:");
   });
 
-  it("skips usage by default and collects it only with --usage", async () => {
+  it("uses local usage mode by default and full collectors with --usage", async () => {
     const createRunDeps = vi.fn(async () => ({
       accounts: [],
       models: [],
@@ -394,10 +395,8 @@ describe("router run", () => {
       env: { MODEL_ROUTER_HOME: home },
       createRunDeps,
     });
-    expect(createRunDeps.mock.calls.map((call) => (call as unknown[])[1])).toEqual([
-      { skipUsage: true },
-      { skipUsage: false },
-    ]);
+    expect(createRunDeps.mock.calls[0][1]).toMatchObject({ usageMode: "local" });
+    expect(createRunDeps.mock.calls[1][1]).toMatchObject({ usageMode: "full" });
   });
 
   it("adds the missing TypeSafe key hint when TypeSafe is unavailable", async () => {

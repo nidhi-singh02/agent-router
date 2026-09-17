@@ -33,3 +33,17 @@ Do not proceed without an explicit user yes:
 4. Write into an external Hermes checkout
 5. Global skill install/link
 6. `router run` without `--dry-run` inside Herdr (`HERDR_ENV=1`) that starts an agent
+
+## P1 local quota + phase-sticky (2026-09-17, `feat/p1-quota-and-phase-sticky`)
+
+`npm run verify` on this branch: typecheck, lint, format, **73 files / 360 tests**, build: pass.
+
+Isolated `MODEL_ROUTER_HOME` (no TypeSafe key, no Herdr):
+
+| Command                                                                                             | Result                                                                                           |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `router run "Implement the approved plan…" --dry-run` with `collectorPreference: ["local-session"]` | exit 2 `quota-exhausted` for `cursor:grok-4.6` from a fresh local Cursor cache (no `--usage`)    |
+| same command with `collectorPreference: ["official-cli"]` only                                      | exit 2 `typesafe-unavailable`; no `phase sticky unless eligibility changes`                      |
+| `router usage refresh --dry-run`                                                                    | one line: `acct_personal source=local-session certainty=estimated remaining=…` (did not persist) |
+
+No Herdr pane. No official CLI/browser collectors. No deploy.

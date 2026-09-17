@@ -21,7 +21,7 @@ describe("collector registry", () => {
     );
   });
 
-  it("skips local-session for accounts without a local session source", () => {
+  it("uses the Codex status line quota cache as local-session for Codex accounts", () => {
     const account = {
       ...personal,
       agent: "codex" as const,
@@ -31,6 +31,7 @@ describe("collector registry", () => {
     };
     expect(collectorsForAccount(account).map((collector) => collector.kind)).toEqual([
       "official-cli",
+      "local-session",
       "browser-dashboard",
     ]);
   });

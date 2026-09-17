@@ -7,6 +7,7 @@ import { formatStatus } from "./commands/status.js";
 import { formatSession, formatSessionList } from "./commands/session.js";
 import { openDatabase } from "./store/database.js";
 import { SessionRepository } from "./store/session-repository.js";
+import { UsageRepository } from "./store/usage-repository.js";
 
 const NO_SESSIONS = "No router sessions yet. Sessions are recorded when `router run` launches.\n";
 import { formatAccounts } from "./commands/accounts.js";
@@ -65,11 +66,7 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
     .option("--dry-run", "Print the route without launching", false)
     .option("--json", "Emit JSON for plugins", false)
     .option("--session <id>", "Route the next phase of an earlier router session")
-    .option(
-      "--usage",
-      "Check quota before routing (slower; without it shared accounts are excluded)",
-      false,
-    )
+    .option("--usage", "Also run official CLI/API and browser quota collectors (slower)", false)
     .action(
       async (
         task: string,
@@ -83,7 +80,7 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
               : { dryRun: Boolean(flags.dryRun) },
             options.runDeps ??
               (await (options.createRunDeps ?? createDefaultRunDeps)(env, {
-                skipUsage: !flags.usage,
+                usageMode: flags.usage ? "full" : "local",
               })),
           );
           stdout.write(`${flags.json ? JSON.stringify(result.json) : result.output}\n`);
@@ -171,12 +168,40 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
   program
     .command("usage")
     .command("refresh")
-    .option("--source <source>", "official-cli|browser", "official-cli")
+    .option("--source <source>", "local-session|official-cli|browser", "local-session")
     .option("--dry-run", "Do not persist", false)
-    .action((flags: { source?: string; dryRun?: boolean }) => {
-      stdout.write(
-        `${usageRefresh({ source: flags.source ?? "official-cli", dryRun: Boolean(flags.dryRun) })}\n`,
-      );
+    .action(async (flags: { source?: string; dryRun?: boolean }) => {
+      const source =
+        flags.source === "official-cli" || flags.source === "browser"
+          ? flags.source
+          : "local-session";
+      const config = loadConfig({ env });
+      const db = openDatabase({ home: config.home });
+      try {
+        const repo = new UsageRepository(db);
+        const printed = await usageRefresh({
+          source,
+          dryRun: Boolean(flags.dryRun),
+          accounts: config.accounts,
+          collect: (account) => {
+            const collectors = collectorsForAccount(account).filter((collector) =>
+              source === "browser"
+                ? collector.kind === "browser-dashboard"
+                : collector.kind === source,
+            );
+            return collectUsageChain(account, collectors);
+          },
+          persist: (snapshot) => {
+            repo.save(snapshot);
+          },
+        });
+        stdout.write(`${printed}\n`);
+      } catch (error) {
+        stderr.write(`${formatError(error)}\n`);
+        program.exitCode = 1;
+      } finally {
+        db.close();
+      }
     });
   return program;
 }

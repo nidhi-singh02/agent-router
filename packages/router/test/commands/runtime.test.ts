@@ -183,16 +183,50 @@ describe("createDefaultRunDeps", () => {
     expect(deps.herdr).toBe(herdr);
   });
 
-  it("skips every usage collector when skipUsage is set", async () => {
-    const collectorsForAccount = vi.fn(() => idleCollectors);
+  it("runs only local-session collectors in default local usage mode", async () => {
+    const localCollect = vi.fn(async () => usageFor(personal.id, 0.55));
+    const officialCollect = vi.fn(async () => usageFor(personal.id, 0.11));
+    const collectors: UsageCollector[] = [
+      {
+        kind: "official-cli",
+        detectAccounts: async () => [],
+        collectUsage: officialCollect,
+        listAvailableModels: async () => [],
+      },
+      {
+        kind: "local-session",
+        detectAccounts: async () => [],
+        collectUsage: localCollect,
+        listAvailableModels: async () => [],
+      },
+    ];
+    const collectorsForAccount = vi.fn(() => collectors);
     const deps = await createDefaultRunDeps(
       { MODEL_ROUTER_HOME: homeWithAccount() },
-      { collectorsForAccount, skipUsage: true },
+      { collectorsForAccount, usageMode: "local" },
     );
-    expect(collectorsForAccount).not.toHaveBeenCalled();
-    const usage = deps.usage[personal.id];
-    expect(usage).toMatchObject({ source: "skipped", certainty: "unknown" });
-    expect(Date.parse(usage!.expiresAt)).toBeGreaterThan(Date.now());
+    expect(collectorsForAccount).toHaveBeenCalled();
+    expect(officialCollect).not.toHaveBeenCalled();
+    expect(localCollect).toHaveBeenCalledTimes(1);
+    expect(deps.usage[personal.id]?.windows[0]?.remainingRatio).toBe(0.55);
+    expect(deps.usage[personal.id]?.source).not.toBe("skipped");
+  });
+
+  it("runs the full collector list when usageMode is full", async () => {
+    const officialCollect = vi.fn(async () => usageFor(personal.id, 0.42));
+    const collectors: UsageCollector[] = [
+      {
+        kind: "official-cli",
+        detectAccounts: async () => [],
+        collectUsage: officialCollect,
+        listAvailableModels: async () => [],
+      },
+    ];
+    await createDefaultRunDeps(
+      { MODEL_ROUTER_HOME: homeWithAccount() },
+      { collectorsForAccount: () => collectors, usageMode: "full" },
+    );
+    expect(officialCollect).toHaveBeenCalledTimes(1);
   });
 
   it("runs configured collector chains instead of fabricating unknown snapshots", async () => {
@@ -208,7 +242,7 @@ describe("createDefaultRunDeps", () => {
     ];
     const deps = await createDefaultRunDeps(
       { MODEL_ROUTER_HOME: homeWithAccount() },
-      { collectorsForAccount: () => collectors },
+      { collectorsForAccount: () => collectors, usageMode: "full" },
     );
     expect(collectUsage).toHaveBeenCalledTimes(1);
     expect(deps.usage[personal.id]?.windows[0]?.remainingRatio).toBe(0.77);

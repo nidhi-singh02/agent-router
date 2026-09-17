@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { decideRoute } from "../../src/semantic/decision-engine.js";
 import type { TypeSafePort } from "../../src/semantic/typesafe-client.js";
 import type { SystemOneRequest, SystemOneResult, Questions } from "@typesafe-ai/sdk";
+import { cursorModel, fakeTypeSafe } from "../cli/fixtures.js";
 
 function choiceAnswer(choice: string, confidence: number, probabilities: Record<string, number>) {
   return { type: "choice" as const, choice, confidence, probabilities };
@@ -290,6 +291,95 @@ describe("decision engine", () => {
       client,
     });
     expect(decision.status).toBe("selected");
+  });
+
+  const grokCandidate = {
+    opaqueId: "acct:cursor:grok-4.6",
+    agent: "cursor" as const,
+    modelId: cursorModel.id,
+    supportedEfforts: ["low", "medium", "high"] as const,
+    projectedRemainingRatio: 0.8,
+    capabilities: cursorModel.capabilities,
+  };
+
+  it("reuses the previous eligible route in the same phase without ranking", async () => {
+    const client = fakeTypeSafe({
+      family: "implementation",
+      phase: "implementation",
+      route: "acct:other",
+      effort: "high",
+    });
+    const decision = await decideRoute({
+      task: "Keep implementing the plan.",
+      userRequestedUltra: false,
+      client,
+      candidates: [grokCandidate],
+      previousRoute: {
+        opaqueId: "acct:cursor:grok-4.6",
+        phase: "implementation",
+        effort: "medium",
+      },
+    });
+    expect(decision).toMatchObject({
+      status: "selected",
+      candidateOpaqueId: "acct:cursor:grok-4.6",
+      effort: "medium",
+      sticky: true,
+    });
+    expect(client.calls.some((call) => "route" in call.questions)).toBe(false);
+    expect(client.calls.some((call) => "effort" in call.questions)).toBe(false);
+  });
+
+  it("re-ranks at a phase boundary even if the previous route is still eligible", async () => {
+    const client = fakeTypeSafe({
+      family: "implementation",
+      phase: "implementation",
+      route: "acct:cursor:grok-4.6",
+      effort: "low",
+    });
+    const decision = await decideRoute({
+      task: "Implement the approved plan.",
+      userRequestedUltra: false,
+      client,
+      candidates: [grokCandidate],
+      previousRoute: {
+        opaqueId: "acct:cursor:grok-4.6",
+        phase: "planning",
+        effort: "high",
+      },
+    });
+    expect(decision).toMatchObject({
+      status: "selected",
+      effort: "low",
+      sticky: false,
+    });
+    expect(client.calls.some((call) => "route" in call.questions)).toBe(true);
+  });
+
+  it("re-ranks when the previous opaque id is not in the eligible set", async () => {
+    const client = fakeTypeSafe({
+      family: "implementation",
+      phase: "implementation",
+      route: "acct:cursor:grok-4.6",
+      effort: "medium",
+    });
+    const decision = await decideRoute({
+      task: "Keep implementing the plan.",
+      userRequestedUltra: false,
+      client,
+      candidates: [grokCandidate],
+      previousRoute: {
+        opaqueId: "acct:other:model",
+        phase: "implementation",
+        effort: "medium",
+      },
+    });
+    expect(decision).toMatchObject({
+      status: "selected",
+      candidateOpaqueId: "acct:cursor:grok-4.6",
+      sticky: false,
+    });
+    expect(client.calls.some((call) => "route" in call.questions)).toBe(true);
   });
 });
 

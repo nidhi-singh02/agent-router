@@ -3,11 +3,14 @@
 ## Dry run
 
 ```sh
+router usage refresh --dry-run
 router usage refresh --source browser --dry-run
 router run "<task>" --dry-run
 ```
 
-Dry run prints a redacted decision or parsed facts and does not create a Herdr pane.
+`router usage refresh --dry-run` collects the selected source (default `local-session`) and
+prints one line per account; it does not write SQLite. Omit `--dry-run` to persist.
+`router run --dry-run` prints a redacted decision and does not create a Herdr pane.
 
 ## Coordinator
 

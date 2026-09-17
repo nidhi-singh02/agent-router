@@ -21,7 +21,7 @@ export const UsageWindowSchema = z.object({
   resetsAt: z.iso.datetime().optional(),
 });
 
-// "none": no collector returned usage. "skipped": usage collection was not requested (no --usage).
+// "none": no collector returned usage. "skipped": legacy SQLite rows from when CLI skipped all collectors.
 export const UsageSourceSchema = z.union([
   CollectorKindSchema,
   z.literal("none"),

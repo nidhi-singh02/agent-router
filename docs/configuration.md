@@ -34,4 +34,7 @@ only (`env:NAME` or `keychain:NAME`). `keychain:NAME` reads the macOS login Keyc
 generic password with service `NAME` (`security find-generic-password -s NAME -w`); add
 one with `security add-generic-password -a "$USER" -s NAME -w`. For `typesafe.apiKeyRef`,
 `TYPESAFE_API_KEY` is used when the reference has no value. Shared `reserveFloor` cannot be set below `0.40`.
+`collectorPreference` lists collector kinds in preference order. `router run` uses only
+`local-session` collectors unless you pass `--usage`, which runs the full chain
+(official-cli/api, local-session, browser).
 `MODEL_ROUTER_COORDINATOR_URL` overrides the file URL.

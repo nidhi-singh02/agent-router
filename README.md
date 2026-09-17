@@ -167,7 +167,7 @@ Selected: cursor / composer-2.5 / none
 Phase: implementation
 Why: TypeSafe selected acct_personal_cursor:cursor:composer-2.5 for implementation in phase implementation
 Reserve policy: personal account
-Cache decision: phase sticky unless eligibility changes
+Cache decision: no previous session
 Usage source: estimated local-session
 Quota: auto 80% left (spend 0% left)
 Freshness: refreshed at 2026-09-17T11:24:04.232Z
@@ -187,15 +187,19 @@ research, and so on). It does not answer your question itself; the launched agen
 
 ## Quota and usage
 
-Usage checks are **off by default**, which keeps `router run --dry-run` at about 0.1 s
-before TypeSafe instead of about 1.2 s. Without them, personal accounts route with no quota
-check, shared accounts are excluded, and the card shows
-`Usage source: skipped (run with --usage to check quota)`.
+Usage checks on `router run` are **local-session by default**: the router reads status-line
+cache files (milliseconds) and persists non-unknown snapshots to SQLite. Official CLI/API
+and browser collectors stay behind `--usage` (slower, and some live commands may consume
+quota). Shared accounts still need _known_ usage; a fresh status-line cache now supplies
+that without `--usage`. Personal accounts stay eligible when the cache is missing or stale
+(`certainty: unknown`, source `none`).
 
-**Pass `--usage` when quota matters.** Without it the router can pick a model whose quota is
-used up, for example a Grok model when Cursor's included spend is at 0%. With `--usage`, a
-model whose pool is at 0% is excluded as `quota-exhausted`, and `router status --usage` shows
-each account's quota.
+`router status` without `--usage` still lists accounts only. `router status --usage` runs
+the full collector chain.
+
+Without a fresh cache, the router can pick a model whose quota is used up, for example a
+Grok model when Cursor's included spend is at 0%. With a fresh cache (or `--usage`), a
+model whose pool is at 0% is excluded as `quota-exhausted`.
 
 ### Where quota comes from
 
@@ -228,14 +232,23 @@ Claude Code passes to its status line:
 Either window may be missing, and a window whose reset time has passed counts as fully
 available.
 
-**Codex and OpenCode:** no quota source yet; usage stays unknown.
+**Codex:** `~/.codex/statusline-quota-cache.json`
+
+```json
+{ "weekly_left": 40, "at": 1789644000 }
+```
+
+`weekly_left` is the percent of weekly quota remaining (0–100), and `at` is Unix time in
+seconds. The router does not write this file.
+
+**OpenCode:** harness-only; quota belongs to the underlying provider.
 
 ### Personal and shared accounts
 
 - **Personal:** always eligible; with known quota, excluded only when its pool is at 0%.
-- **Shared:** needs known usage (`--usage` plus a working cache) and keeps 40% of its quota
-  in reserve. It is excluded when the coordinator reports someone else using it. Without a
-  coordinator (the usual local setup), it routes on its quota alone.
+- **Shared:** needs known usage (a fresh local-session cache, or `--usage`) and keeps 40% of
+  its quota in reserve. It is excluded when the coordinator reports someone else using it.
+  Without a coordinator (the usual local setup), it routes on its quota alone.
 
 ## Phases: planning, then implementation
 
@@ -267,29 +280,30 @@ router run "<task>" [--dry-run] [--usage] [--session <id>] [--json]
 router status [--usage]
 router session [id] [--list] [--limit <n>] [--json]
 router accounts
-router usage refresh --dry-run
+router usage refresh [--source local-session|official-cli|browser] [--dry-run]
 ```
 
 `--json` prints machine-readable output for plugins, including `sessionId`, `agentName`, and
-`paneId`. `router usage refresh` is limited to dry-run parsing today.
+`paneId`. `router usage refresh` defaults to local-session file reads; `--dry-run` prints
+facts and does not persist. Without `--dry-run` it writes snapshots to SQLite.
 
 ## Troubleshooting
 
-| Message                                                                                 | What to do                                                                             |
-| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `TypeSafe could not select a route (typesafe-unavailable). No TypeSafe API key found …` | Store the key (setup step 4)                                                           |
-| `No eligible route. Exclusions: [...]`                                                  | Read each `reason` below                                                               |
-| `quota-exhausted`                                                                       | That model's quota pool is at 0%                                                       |
-| `shared-activity-constrained`                                                           | Shared account without known usage (add `--usage`), or the coordinator reports it busy |
-| `below-reserve`                                                                         | Shared account would drop below its 40% reserve                                        |
-| `stale-usage`, `unknown-usage`                                                          | Usage data too old or missing; open a session of that tool to refresh its cache        |
-| `model-not-enabled`, `account-disabled`                                                 | Check `enabledModels` and `enabled` in the config                                      |
-| `HERDR_ENV=1 is required to launch a pane`                                              | Run from a Herdr pane, or add `--dry-run`                                              |
-| `herdr agent start failed: <code>: <message>`                                           | Herdr's own error; the router closes the pane it created                               |
-| `handoff not received by agent <name> in pane <id> …`                                   | The agent is open but never started the task; paste the task there or run again        |
-| `agent is blocked; not resending the handoff`                                           | The agent is waiting on a question or approval in its pane                             |
-| `Session not found: <id>`                                                               | Check the id with `router session --list`                                              |
-| `zsh: command not found: router`                                                        | Setup step 2, then open a new shell                                                    |
+| Message                                                                                 | What to do                                                                                       |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `TypeSafe could not select a route (typesafe-unavailable). No TypeSafe API key found …` | Store the key (setup step 4)                                                                     |
+| `No eligible route. Exclusions: [...]`                                                  | Read each `reason` below                                                                         |
+| `quota-exhausted`                                                                       | That model's quota pool is at 0%; if unexpected, refresh the status-line cache or pass `--usage` |
+| `shared-activity-constrained`                                                           | Shared account without known usage (missing/stale cache, or coordinator busy)                    |
+| `below-reserve`                                                                         | Shared account would drop below its 40% reserve                                                  |
+| `stale-usage`, `unknown-usage`                                                          | Usage data too old or missing; open a session of that tool to refresh its cache                  |
+| `model-not-enabled`, `account-disabled`                                                 | Check `enabledModels` and `enabled` in the config                                                |
+| `HERDR_ENV=1 is required to launch a pane`                                              | Run from a Herdr pane, or add `--dry-run`                                                        |
+| `herdr agent start failed: <code>: <message>`                                           | Herdr's own error; the router closes the pane it created                                         |
+| `handoff not received by agent <name> in pane <id> …`                                   | The agent is open but never started the task; paste the task there or run again                  |
+| `agent is blocked; not resending the handoff`                                           | The agent is waiting on a question or approval in its pane                                       |
+| `Session not found: <id>`                                                               | Check the id with `router session --list`                                                        |
+| `zsh: command not found: router`                                                        | Setup step 2, then open a new shell                                                              |
 
 ## Development
 

@@ -7,6 +7,7 @@ import { createBrowserDashboardCollector } from "./browser/dashboard-collector.j
 import { runCommand } from "./command-runner.js";
 import { createCursorStatuslineCollector } from "./cursor/cursor-statusline-collector.js";
 import { createClaudeStatuslineCollector } from "./anthropic/claude-statusline-collector.js";
+import { createCodexStatuslineCollector } from "./openai/codex-statusline-collector.js";
 import type { UsageCollector } from "./types.js";
 
 export interface CollectorRegistryOptions {
@@ -14,6 +15,7 @@ export interface CollectorRegistryOptions {
   browserCollector?: UsageCollector;
   cursorQuotaCachePath?: string;
   claudeQuotaCachePath?: string;
+  codexQuotaCachePath?: string;
 }
 
 function officialCollector(account: Account, run: typeof runCommand): UsageCollector {
@@ -58,6 +60,9 @@ export function collectorsForAccount(
       }
       if (account.agent === "claude-code") {
         return [createClaudeStatuslineCollector({ cachePath: options.claudeQuotaCachePath })];
+      }
+      if (account.agent === "codex") {
+        return [createCodexStatuslineCollector({ cachePath: options.codexQuotaCachePath })];
       }
       return [];
     }
