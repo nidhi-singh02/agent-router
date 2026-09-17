@@ -1,0 +1,70 @@
+{
+  "updatedAt": "2026-09-17T00:00:00.000Z",
+  "provenance": "Operator-curated conservative launch profiles. Live availability and quota must come from collectors; this file does not assert that a model is currently offered.",
+  "models": [
+    {
+      "id": "cursor:grok-4.6",
+      "provider": "cursor",
+      "agent": "cursor",
+      "launchName": "grok-4.6",
+      "supportedEfforts": ["low", "medium", "high"],
+      "capabilities": {
+        "planning": 0.8,
+        "coding": 0.8,
+        "debugging": 0.75,
+        "creativity": 0.7,
+        "research": 0.7
+      },
+      "relativeQuotaCost": 1,
+      "relativeLatency": 1
+    },
+    {
+      "id": "anthropic:claude-sonnet",
+      "provider": "anthropic",
+      "agent": "claude-code",
+      "launchName": "sonnet",
+      "supportedEfforts": ["low", "medium", "high"],
+      "capabilities": {
+        "planning": 0.8,
+        "coding": 0.8,
+        "debugging": 0.8,
+        "creativity": 0.7,
+        "research": 0.75
+      },
+      "relativeQuotaCost": 1,
+      "relativeLatency": 1
+    },
+    {
+      "id": "openai:codex",
+      "provider": "openai",
+      "agent": "codex",
+      "launchName": "codex",
+      "supportedEfforts": ["low", "medium", "high"],
+      "capabilities": {
+        "planning": 0.7,
+        "coding": 0.8,
+        "debugging": 0.75,
+        "creativity": 0.6,
+        "research": 0.65
+      },
+      "relativeQuotaCost": 1,
+      "relativeLatency": 1
+    },
+    {
+      "id": "openai:opencode",
+      "provider": "openai",
+      "agent": "opencode",
+      "launchName": "openai",
+      "supportedEfforts": ["low", "medium", "high"],
+      "capabilities": {
+        "planning": 0.7,
+        "coding": 0.75,
+        "debugging": 0.7,
+        "creativity": 0.65,
+        "research": 0.7
+      },
+      "relativeQuotaCost": 1,
+      "relativeLatency": 1
+    }
+  ]
+}
