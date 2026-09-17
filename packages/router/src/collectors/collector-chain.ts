@@ -27,14 +27,15 @@ export async function collectUsageChain(
       // Degrade to the next collector; never invent usage.
     }
   }
-  const now = new Date().toISOString();
+  const now = Date.now();
   return normalizeUsage({
     accountId: account.id,
     windows: [{ kind: "five-hour" }],
-    collectedAt: now,
+    collectedAt: new Date(now).toISOString(),
     source: "browser-dashboard",
     certainty: "unknown",
-    expiresAt: now,
+    // Unknown usage must still be fresh; otherwise every account is excluded as stale.
+    expiresAt: new Date(now + 60_000).toISOString(),
     activeReservationRatio: 0,
   });
 }
