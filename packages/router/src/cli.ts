@@ -6,6 +6,7 @@ import { formatSession } from "./commands/session.js";
 import { formatAccounts } from "./commands/accounts.js";
 import { usageRefresh } from "./commands/usage.js";
 import { loadConfig } from "./config/config-loader.js";
+import { createDefaultRunDeps } from "./commands/runtime.js";
 import { formatError } from "./presentation/errors.js";
 
 export interface CliIo {
@@ -52,26 +53,10 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
     .option("--json", "Emit JSON for plugins", false)
     .action(async (task: string, flags: { dryRun?: boolean; json?: boolean }) => {
       try {
-        if (!options.runDeps && !options.run) {
-          throw new Error(
-            "router run requires injected run dependencies in tests or a loaded config",
-          );
-        }
         const result = await (options.run ?? executeRun)(
           task,
           { dryRun: Boolean(flags.dryRun) },
-          options.runDeps ?? {
-            accounts: [],
-            models: [],
-            usage: {},
-            client: {
-              calls: [],
-              systemOne: async () => {
-                throw new Error("TypeSafe client not configured");
-              },
-            },
-            env,
-          },
+          options.runDeps ?? createDefaultRunDeps(env),
         );
         stdout.write(`${flags.json ? JSON.stringify(result.json) : result.output}\n`);
         program.exitCode = result.code;
