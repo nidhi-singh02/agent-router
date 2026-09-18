@@ -138,6 +138,11 @@ export async function executeRun(
         }
       : undefined,
   });
+  if (decision.status === "unsafe-state") {
+    const output =
+      "Task text looks like it contains a credential and was not sent. Remove the secret and retry.";
+    return { code: 2, output, json: { ok: false, status: "unsafe-state" } };
+  }
   if (decision.status === "ask-user") {
     return {
       code: 3,

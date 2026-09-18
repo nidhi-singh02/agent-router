@@ -45,6 +45,7 @@ export type RouteDecisionResult =
     }
   | { status: "invalid-choice" }
   | { status: "no-candidates" }
+  | { status: "unsafe-state" }
   | { status: "typesafe-unavailable"; fallback?: ReturnType<typeof deterministicFallback> };
 
 export function applyConfidencePolicy(input: {
@@ -71,7 +72,11 @@ export async function decideRoute(input: DecideRouteInput): Promise<RouteDecisio
   }
   const eligibleIds = input.candidates.map((candidate) => candidate.opaqueId);
   const classificationState = { task: input.task, candidateCount: input.candidates.length };
-  assertSafeState(classificationState);
+  try {
+    assertSafeState(classificationState);
+  } catch {
+    return { status: "unsafe-state" };
+  }
 
   let classification;
   try {
@@ -140,7 +145,11 @@ export async function decideRoute(input: DecideRouteInput): Promise<RouteDecisio
       supportedEfforts: [...candidate.supportedEfforts],
     })),
   };
-  assertSafeState(rankingState);
+  try {
+    assertSafeState(rankingState);
+  } catch {
+    return { status: "unsafe-state" };
+  }
 
   let ranking;
   try {
