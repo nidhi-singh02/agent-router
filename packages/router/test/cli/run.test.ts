@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createRequire } from "node:module";
 import { createProgram, runCli } from "../../src/cli.js";
 import { executeRun } from "../../src/commands/run.js";
+import type { runCommand } from "../../src/collectors/command-runner.js";
 import { collectUsageChain } from "../../src/collectors/collector-chain.js";
 import { createHerdrClient } from "../../src/launch/herdr-client.js";
 import { ReservationService } from "../../src/reservations/reservation-service.js";
@@ -37,6 +38,72 @@ async function captureHelp(): Promise<string> {
   }
   return out;
 }
+
+type ScriptInput = Parameters<typeof runCommand>[0];
+type Scripted = Record<
+  string,
+  { ok: boolean; stdout?: string; code?: number | null; timedOut?: boolean }
+>;
+
+function scripted(responses: Scripted): typeof runCommand {
+  return async (input: ScriptInput) => {
+    const response = responses[`${input.command} ${input.args[0]}`] ?? { ok: false, code: 1 };
+    return {
+      ok: response.ok,
+      stdout: response.stdout ?? "",
+      stderr: "",
+      code: response.code === undefined ? (response.ok ? 0 : 1) : response.code,
+      timedOut: response.timedOut ?? false,
+      executedReturnedOutput: false as const,
+    };
+  };
+}
+
+function baseDeps() {
+  return {
+    accounts: [personal],
+    models: [cursorModel],
+    usage: { [personal.id]: usageFor(personal.id, 0.8) },
+    client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
+    env: { HERDR_ENV: "1" },
+    now,
+  };
+}
+
+/** Walks any value and fails on a string that looks like a path or a filename. */
+function expectNoPathLike(value: unknown): void {
+  if (typeof value === "string") {
+    expect(value).not.toMatch(/\//);
+    expect(value).not.toMatch(/\.[a-z]{1,5}$/i);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      expectNoPathLike(item);
+    }
+    return;
+  }
+  if (value && typeof value === "object") {
+    for (const item of Object.values(value)) {
+      expectNoPathLike(item);
+    }
+  }
+}
+
+const resolved = {
+  "git rev-parse": { ok: true, stdout: "/repo\n" },
+  "git remote": { ok: true, stdout: "git@github.com:owner/repo.git\n" },
+  "gh pr": {
+    ok: true,
+    stdout: JSON.stringify({
+      additions: 300,
+      deletions: 112,
+      changedFiles: 9,
+      url: "https://github.com/owner/repo/pull/9",
+      isCrossRepository: false,
+    }),
+  },
+};
 
 describe("router run", () => {
   it("prints help for the explicit CLI", async () => {
@@ -450,5 +517,69 @@ describe("router run", () => {
     expect(result.output).toBe(
       "TypeSafe could not select a route (typesafe-unavailable). No TypeSafe API key found (checked TYPESAFE_API_KEY).",
     );
+  });
+  it("resolves a PR reference into the decision card and the json block", async () => {
+    const result = await executeRun(
+      "refactor PR 9",
+      { dryRun: true },
+      { ...baseDeps(), runCommand: scripted(resolved) },
+    );
+    expect(result.output).toContain(
+      "Task size: large (250-999 lines), 6-20 files (PR #9 in owner/repo)",
+    );
+    expect((result.json as { enrichment: unknown }).enrichment).toEqual({
+      status: "resolved",
+      prNumber: 9,
+      repo: "owner/repo",
+      sizeBucket: "large",
+      fileCountBucket: "6-20",
+    });
+  });
+
+  it("routes normally and reports the reason when resolution fails", async () => {
+    const result = await executeRun(
+      "refactor PR 9",
+      { dryRun: true },
+      {
+        ...baseDeps(),
+        runCommand: scripted({
+          "git rev-parse": { ok: true, stdout: "/repo\n" },
+          "git remote": { ok: true, stdout: "git@github.com:owner/repo.git\n" },
+          "gh pr": { ok: false, code: 4 },
+        }),
+      },
+    );
+    expect(result.code).toBe(0);
+    expect(result.output).toContain("Task size: unresolved (gh-not-authenticated)");
+  });
+
+  it("omits the card line and makes no subprocess call when no ref is present", async () => {
+    const run = vi.fn();
+    const result = await executeRun(
+      "add a dark mode toggle",
+      { dryRun: true },
+      { ...baseDeps(), runCommand: run as never },
+    );
+    expect(result.output).not.toContain("Task size:");
+    expect(run).not.toHaveBeenCalled();
+    expect((result.json as { enrichment: { status: string } }).enrichment.status).toBe("skipped");
+  });
+
+  it("sends only bucketed enrichment to TypeSafe, never a path", async () => {
+    const client = fakeTypeSafe({});
+    await executeRun(
+      "refactor PR 9",
+      { dryRun: true },
+      { ...baseDeps(), client, runCommand: scripted(resolved) },
+    );
+    expect(client.calls.length).toBeGreaterThan(0);
+    for (const call of client.calls) {
+      for (const [key, value] of Object.entries(call.state as Record<string, unknown>)) {
+        if (key === "task") {
+          continue;
+        }
+        expectNoPathLike(value);
+      }
+    }
   });
 });

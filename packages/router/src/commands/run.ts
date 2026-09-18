@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { runCommand } from "../collectors/command-runner.js";
+import { runCommand as defaultRunCommand, type runCommand } from "../collectors/command-runner.js";
 import { redactCollectorText } from "../collectors/normalizer.js";
+import { resolveEnrichment, type Resolution } from "../enrich/resolver.js";
+import { toShapes, type EnrichmentShapes } from "../enrich/buckets.js";
 import { RouterSessionSchema } from "../domain/session.js";
 import type { SessionRepository } from "../store/session-repository.js";
 import { evaluateEligibility } from "../policy/eligibility.js";
@@ -55,6 +57,15 @@ export async function executeRun(
     const output = `Session not found: ${options.previousSessionId}`;
     return { code: 2, output, json: { ok: false, error: output } };
   }
+  const resolution = await resolveEnrichment({
+    task,
+    run: deps.runCommand ?? defaultRunCommand,
+    env: deps.env,
+  });
+  const enrichment =
+    resolution.status === "resolved"
+      ? toShapes({ churn: resolution.churn, changedFiles: resolution.changedFiles })
+      : undefined;
   const reservations = deps.reservations ?? new ReservationService();
   const eligible = [];
   const exclusions = [];
@@ -123,6 +134,7 @@ export async function executeRun(
   }
   const decision = await decideRoute({
     task,
+    enrichment,
     userRequestedUltra: /\bultra\b/i.test(task),
     client: deps.client,
     candidates: eligible.map((item) => ({
@@ -289,6 +301,7 @@ export async function executeRun(
   const card = formatDecisionCard({
     selected: `${selected.model.agent} / ${selected.model.launchName} / ${decision.effort}`,
     phase: decision.phase,
+    taskSize: formatTaskSize(resolution, enrichment),
     why: decision.reason,
     previousSession: previous
       ? `${previous.id} (${previous.phase} -> ${decision.phase})`
@@ -329,8 +342,50 @@ export async function executeRun(
       paneId: launch.paneId,
       agentName: launch.agentName,
       sessionId,
+      enrichment: enrichmentJson(resolution, enrichment),
     },
   };
+}
+
+function enrichmentJson(
+  resolution: Resolution,
+  shapes: EnrichmentShapes | undefined,
+): Record<string, unknown> {
+  if (resolution.status === "skipped") {
+    return { status: "skipped" };
+  }
+  if (resolution.status === "unresolved") {
+    return { status: "unresolved", reason: resolution.reason };
+  }
+  return {
+    status: "resolved",
+    prNumber: resolution.prNumber,
+    repo: `${resolution.repo.owner}/${resolution.repo.name}`,
+    sizeBucket: shapes!.sizeBucket,
+    fileCountBucket: shapes!.fileCountBucket,
+  };
+}
+
+const SIZE_LABEL: Record<EnrichmentShapes["sizeBucket"], string> = {
+  trivial: "trivial (1-9 lines)",
+  small: "small (10-49 lines)",
+  medium: "medium (50-249 lines)",
+  large: "large (250-999 lines)",
+  "very-large": "very-large (1000+ lines)",
+};
+
+function formatTaskSize(
+  resolution: Resolution,
+  shapes: EnrichmentShapes | undefined,
+): string | undefined {
+  if (resolution.status === "skipped") {
+    return undefined;
+  }
+  if (resolution.status === "unresolved") {
+    return `unresolved (${resolution.reason})`;
+  }
+  const { owner, name } = resolution.repo;
+  return `${SIZE_LABEL[shapes!.sizeBucket]}, ${shapes!.fileCountBucket} files (PR #${resolution.prNumber} in ${owner}/${name})`;
 }
 
 export type { ReasoningEffort };

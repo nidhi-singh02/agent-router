@@ -4,11 +4,11 @@
  * It carries no free-form string and no array, so it can hold neither a file path nor
  * an attacker-chosen ordering. Its full domain is 5 x 5 x 2 = 50 states.
  */
-export interface EnrichmentShapes {
+export type EnrichmentShapes = {
   sizeBucket: "trivial" | "small" | "medium" | "large" | "very-large";
   fileCountBucket: "1" | "2-5" | "6-20" | "21-100" | "101+";
   truncated: boolean;
-}
+};
 
 export function toShapes(input: { churn: number; changedFiles: number }): EnrichmentShapes {
   return {

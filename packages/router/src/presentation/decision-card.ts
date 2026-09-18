@@ -1,6 +1,7 @@
 export function formatDecisionCard(input: {
   selected: string;
   phase: string;
+  taskSize?: string;
   why: string;
   previousSession?: string;
   sharedActivity?: string;
@@ -14,6 +15,7 @@ export function formatDecisionCard(input: {
   return [
     `Selected: ${input.selected}`,
     `Phase: ${input.phase}`,
+    input.taskSize ? `Task size: ${input.taskSize}` : undefined,
     `Why: ${input.why}`,
     input.previousSession ? `Previous session: ${input.previousSession}` : undefined,
     input.sharedActivity ? `Shared activity: ${input.sharedActivity}` : undefined,
