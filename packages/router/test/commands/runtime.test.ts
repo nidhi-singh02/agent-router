@@ -289,6 +289,20 @@ describe("createDefaultRunDeps", () => {
     expect(deps.enrichmentEnabled).toBe(false);
   });
 
+  it("hands the resolver gh auth variables while the launch env stays sanitized", async () => {
+    const deps = await createDefaultRunDeps(
+      {
+        MODEL_ROUTER_HOME: homeWithAccount(),
+        GH_TOKEN: "t",
+        GH_REPO: "attacker/repo",
+      },
+      { collectorsForAccount: () => idleCollectors },
+    );
+    expect(deps.enrichEnv?.GH_TOKEN).toBe("t");
+    expect(deps.enrichEnv?.GH_REPO).toBeUndefined();
+    expect(deps.env.GH_TOKEN).toBeUndefined();
+  });
+
   it("looks up coordinator status with an HMAC fingerprint and never a raw account id", async () => {
     const secret = "test-fingerprint-secret";
     const home = mkdtempSync(path.join(os.tmpdir(), "router-runtime-"));

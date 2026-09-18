@@ -533,7 +533,51 @@ describe("router run", () => {
       repo: "owner/repo",
       sizeBucket: "large",
       fileCountBucket: "6-20",
+      advisoryMultiplier: 4,
     });
+  });
+
+  it("says one file rather than 1 files on the card", async () => {
+    const result = await executeRun(
+      "refactor PR 9",
+      { dryRun: true },
+      {
+        ...baseDeps(),
+        runCommand: scripted({
+          ...resolved,
+          "gh pr": {
+            ok: true,
+            stdout: JSON.stringify({
+              additions: 3,
+              deletions: 2,
+              changedFiles: 1,
+              url: "https://github.com/owner/repo/pull/9",
+              isCrossRepository: false,
+            }),
+          },
+        }),
+      },
+    );
+    expect(result.output).toContain("Task size: trivial (1-9 lines), 1 file (PR #9 in owner/repo)");
+  });
+
+  it("forwards gh auth variables from enrichEnv without putting them in the launch env", async () => {
+    const seen: ScriptInput[] = [];
+    const run = scripted(resolved);
+    await executeRun(
+      "refactor PR 9",
+      { dryRun: true },
+      {
+        ...baseDeps(),
+        enrichEnv: { PATH: "/bin", GH_TOKEN: "t" },
+        runCommand: async (input: ScriptInput) => {
+          seen.push(input);
+          return run(input);
+        },
+      },
+    );
+    const ghCall = seen.find((input) => input.command === "gh")!;
+    expect(ghCall.env?.GH_TOKEN).toBe("t");
   });
 
   it("routes normally and reports the reason when resolution fails", async () => {

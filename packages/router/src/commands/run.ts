@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { runCommand as defaultRunCommand, type runCommand } from "../collectors/command-runner.js";
 import { redactCollectorText } from "../collectors/normalizer.js";
 import { resolveEnrichment, type Resolution } from "../enrich/resolver.js";
-import { toShapes, type EnrichmentShapes } from "../enrich/buckets.js";
+import { advisoryMultiplier, toShapes, type EnrichmentShapes } from "../enrich/buckets.js";
 import { RouterSessionSchema } from "../domain/session.js";
 import type { SessionRepository } from "../store/session-repository.js";
 import { evaluateEligibility } from "../policy/eligibility.js";
@@ -31,6 +31,8 @@ export interface RunDeps {
   usage: Record<string, UsageSnapshot>;
   client: TypeSafePort;
   env: NodeJS.Dict<string>;
+  /** Parent env for the resolver, which allowlists it again. Never used for launch. */
+  enrichEnv?: NodeJS.Dict<string>;
   now?: Date;
   reservations?: ReservationService;
   herdr?: HerdrClient;
@@ -65,7 +67,7 @@ export async function executeRun(
     : await resolveEnrichment({
         task,
         run: deps.runCommand ?? defaultRunCommand,
-        env: deps.env,
+        env: deps.enrichEnv ?? deps.env,
       });
   const enrichment =
     resolution.status === "resolved"
@@ -306,7 +308,7 @@ export async function executeRun(
   const card = formatDecisionCard({
     selected: `${selected.model.agent} / ${selected.model.launchName} / ${decision.effort}`,
     phase: decision.phase,
-    taskSize: formatTaskSize(resolution, enrichment),
+    taskSize: formatTaskSize(resolution),
     why: decision.reason,
     previousSession: previous
       ? `${previous.id} (${previous.phase} -> ${decision.phase})`
@@ -347,27 +349,26 @@ export async function executeRun(
       paneId: launch.paneId,
       agentName: launch.agentName,
       sessionId,
-      enrichment: enrichmentJson(resolution, enrichment),
+      enrichment: enrichmentJson(resolution),
     },
   };
 }
 
-function enrichmentJson(
-  resolution: Resolution,
-  shapes: EnrichmentShapes | undefined,
-): Record<string, unknown> {
+function enrichmentJson(resolution: Resolution): Record<string, unknown> {
   if (resolution.status === "skipped") {
     return { status: "skipped" };
   }
   if (resolution.status === "unresolved") {
     return { status: "unresolved", reason: resolution.reason };
   }
+  const shapes = toShapes(resolution);
   return {
     status: "resolved",
     prNumber: resolution.prNumber,
     repo: `${resolution.repo.owner}/${resolution.repo.name}`,
-    sizeBucket: shapes!.sizeBucket,
-    fileCountBucket: shapes!.fileCountBucket,
+    sizeBucket: shapes.sizeBucket,
+    fileCountBucket: shapes.fileCountBucket,
+    advisoryMultiplier: advisoryMultiplier(shapes.sizeBucket),
   };
 }
 
@@ -379,18 +380,20 @@ const SIZE_LABEL: Record<EnrichmentShapes["sizeBucket"], string> = {
   "very-large": "very-large (1000+ lines)",
 };
 
-function formatTaskSize(
-  resolution: Resolution,
-  shapes: EnrichmentShapes | undefined,
-): string | undefined {
+function formatTaskSize(resolution: Resolution): string | undefined {
   if (resolution.status === "skipped") {
     return undefined;
   }
   if (resolution.status === "unresolved") {
     return `unresolved (${resolution.reason})`;
   }
+  const shapes = toShapes(resolution);
+  // S3's charset check on owner and name is enforced at ingress by `parsePrUrl` in
+  // `enrich/resolver.ts`, whose `PR_URL` regex is the only source of these values, so
+  // there is no resolution that could reach this line with a repo to omit.
   const { owner, name } = resolution.repo;
-  return `${SIZE_LABEL[shapes!.sizeBucket]}, ${shapes!.fileCountBucket} files (PR #${resolution.prNumber} in ${owner}/${name})`;
+  const files = shapes.fileCountBucket === "1" ? "file" : "files";
+  return `${SIZE_LABEL[shapes.sizeBucket]}, ${shapes.fileCountBucket} ${files} (PR #${resolution.prNumber} in ${owner}/${name})`;
 }
 
 export type { ReasoningEffort };
