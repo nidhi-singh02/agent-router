@@ -277,6 +277,18 @@ describe("createDefaultRunDeps", () => {
     await expect(deps.activityClient!.status("acct_shared")).resolves.toBe("unreachable");
   });
 
+  it("carries enrichment.enabled from config into RunDeps.enrichmentEnabled", async () => {
+    const home = homeWithAccount();
+    const configPath = path.join(home, "config.json");
+    const config = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
+    writeFileSync(configPath, JSON.stringify({ ...config, enrichment: { enabled: false } }));
+    const deps = await createDefaultRunDeps(
+      { MODEL_ROUTER_HOME: home },
+      { collectorsForAccount: () => idleCollectors },
+    );
+    expect(deps.enrichmentEnabled).toBe(false);
+  });
+
   it("looks up coordinator status with an HMAC fingerprint and never a raw account id", async () => {
     const secret = "test-fingerprint-secret";
     const home = mkdtempSync(path.join(os.tmpdir(), "router-runtime-"));

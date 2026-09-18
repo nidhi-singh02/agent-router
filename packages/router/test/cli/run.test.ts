@@ -565,6 +565,30 @@ describe("router run", () => {
     expect((result.json as { enrichment: { status: string } }).enrichment.status).toBe("skipped");
   });
 
+  it("makes no subprocess call when --no-enrich is set", async () => {
+    const run = vi.fn();
+    const result = await executeRun(
+      "refactor PR 9",
+      { dryRun: true, noEnrich: true },
+      { ...baseDeps(), runCommand: run as never },
+    );
+    expect(run).not.toHaveBeenCalled();
+    expect(result.output).not.toContain("Task size:");
+    expect((result.json as { enrichment: { status: string } }).enrichment.status).toBe("skipped");
+  });
+
+  it("makes no subprocess call when config disables enrichment", async () => {
+    const run = vi.fn();
+    const result = await executeRun(
+      "refactor PR 9",
+      { dryRun: true },
+      { ...baseDeps(), enrichmentEnabled: false, runCommand: run as never },
+    );
+    expect(run).not.toHaveBeenCalled();
+    expect(result.output).not.toContain("Task size:");
+    expect((result.json as { enrichment: { status: string } }).enrichment.status).toBe("skipped");
+  });
+
   it("sends only bucketed enrichment to TypeSafe, never a path", async () => {
     const client = fakeTypeSafe({});
     await executeRun(
