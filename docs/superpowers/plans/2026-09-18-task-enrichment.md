@@ -807,6 +807,7 @@ const RESOLVER_MAX_BYTES = 65_536;
 /**
  * Variables `gh` reads that redirect the request or the credential are never forwarded.
  * `GH_REPO` accepts `[HOST/]OWNER/REPO`, the same redirect the `-R` flag provides.
+ * Generic enterprise tokens are also excluded because the repository controls the host.
  */
 const FORWARDED = [
   "PATH",
@@ -814,8 +815,6 @@ const FORWARDED = [
   "XDG_CONFIG_HOME",
   "GH_TOKEN",
   "GITHUB_TOKEN",
-  "GH_ENTERPRISE_TOKEN",
-  "GITHUB_ENTERPRISE_TOKEN",
   "LANG",
   "LC_ALL",
   "TMPDIR",

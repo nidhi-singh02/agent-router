@@ -362,11 +362,13 @@ describe("resolveEnrichment", () => {
 });
 
 describe("resolverEnv", () => {
-  it("forwards auth variables and drops redirect variables", () => {
+  it("forwards github.com auth and drops generic enterprise credentials and redirects", () => {
     const env = resolverEnv({
       PATH: "/bin",
       HOME: "/home/u",
       GH_TOKEN: "t",
+      GH_ENTERPRISE_TOKEN: "enterprise-token",
+      GITHUB_ENTERPRISE_TOKEN: "enterprise-token-fallback",
       GH_REPO: "attacker/repo",
       GH_HOST: "evil.example",
       GH_CONFIG_DIR: "/tmp/cfg",
@@ -374,6 +376,8 @@ describe("resolverEnv", () => {
     });
     expect(env.PATH).toBe("/bin");
     expect(env.GH_TOKEN).toBe("t");
+    expect(env.GH_ENTERPRISE_TOKEN).toBeUndefined();
+    expect(env.GITHUB_ENTERPRISE_TOKEN).toBeUndefined();
     expect(env.GH_REPO).toBeUndefined();
     expect(env.GH_HOST).toBeUndefined();
     expect(env.GH_CONFIG_DIR).toBeUndefined();

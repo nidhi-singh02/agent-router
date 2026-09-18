@@ -209,12 +209,16 @@ The resolver constructs its environment explicitly. It must not pass `process.en
 must not reuse `sanitizeRuntimeEnv` (`commands/runtime.ts:36`), whose allowlist omits
 `gh`'s auth variables.
 
-Forwarded: `PATH`, `HOME`, `XDG_CONFIG_HOME`, `GH_TOKEN`, `GITHUB_TOKEN`,
-`GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN`, `LANG`, `LC_ALL`, `TMPDIR`.
+Forwarded: `PATH`, `HOME`, `XDG_CONFIG_HOME`, `GH_TOKEN`, `GITHUB_TOKEN`, `LANG`,
+`LC_ALL`, `TMPDIR`.
 
 Explicitly **not** forwarded, because each redirects the request or the credential:
 `GH_REPO` (accepts `[HOST/]OWNER/REPO`, the same redirect `-R` provides, via the
-environment), `GH_HOST`, `GH_CONFIG_DIR`, `GH_PATH`.
+environment), `GH_HOST`, `GH_CONFIG_DIR`, `GH_PATH`, `GH_ENTERPRISE_TOKEN`, and
+`GITHUB_ENTERPRISE_TOKEN`. The generic enterprise tokens apply to whichever enterprise
+host the repository remote selects, so a repository-controlled origin could receive
+them before the response-time identity check. Enterprise authentication therefore uses
+`gh`'s host-specific credential store.
 
 `gh` aliases and extensions need no handling: `gh alias set pr …` is refused because
 `pr` is a core command, and extensions cannot override core commands.
