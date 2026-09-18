@@ -20,7 +20,7 @@
 - `estimateTaskCostRatio` (`policy/cost-estimator.ts`) is not modified by this plan.
 - `handoff.relevantFiles` stays `[]`.
 - Every numeric value derived from a subprocess is checked with `Number.isFinite` before use.
-- Run the suite with `npx vitest run --project router` from the repo root.
+- Run the suite with `npx vitest run packages/router` from the repo root.
 
 ---
 
@@ -56,7 +56,7 @@ it("returns unsafe-state instead of throwing when the task contains a credential
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx vitest run --project router packages/router/test/semantic/decision-engine.test.ts -t "unsafe-state"`
+Run: `npx vitest run packages/router/test/semantic/decision-engine.test.ts -t "unsafe-state"`
 Expected: FAIL — the call throws `TypeSafe state contains forbidden sensitive data` rather than returning.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -94,7 +94,7 @@ if (decision.status === "unsafe-state") {
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `npx vitest run --project router`
+Run: `npx vitest run packages/router`
 Expected: PASS, including existing tests.
 
 - [ ] **Step 6: Commit**
@@ -167,7 +167,7 @@ describe("runCommand", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx vitest run --project router packages/router/test/collectors/command-runner.test.ts`
+Run: `npx vitest run packages/router/test/collectors/command-runner.test.ts`
 Expected: FAIL — `code` and `timedOut` are not properties of `CommandResult`; `cwd` is not accepted.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -252,7 +252,7 @@ In `packages/router/src/commands/runtime.ts`, inside `createDefaultRunDeps`'s re
 
 - [ ] **Step 5: Run the full suite**
 
-Run: `npx vitest run --project router`
+Run: `npx vitest run packages/router`
 Expected: PASS. Existing collector tests construct `CommandResult` literals; add `code: 0, timedOut: false` to any that fail to typecheck.
 
 - [ ] **Step 6: Commit**
@@ -318,7 +318,7 @@ describe("detectPrRefs", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx vitest run --project router packages/router/test/enrich/ref-detector.test.ts`
+Run: `npx vitest run packages/router/test/enrich/ref-detector.test.ts`
 Expected: FAIL — cannot resolve `../../src/enrich/ref-detector.js`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -354,7 +354,7 @@ export function detectPrRefs(task: string): number[] {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `npx vitest run --project router packages/router/test/enrich/ref-detector.test.ts`
+Run: `npx vitest run packages/router/test/enrich/ref-detector.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -432,7 +432,7 @@ describe("toShapes", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx vitest run --project router packages/router/test/enrich/buckets.test.ts`
+Run: `npx vitest run packages/router/test/enrich/buckets.test.ts`
 Expected: FAIL — cannot resolve `../../src/enrich/buckets.js`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -509,7 +509,7 @@ A churn of `0` never reaches this function; the resolver reports `empty-diff` fi
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `npx vitest run --project router packages/router/test/enrich/buckets.test.ts`
+Run: `npx vitest run packages/router/test/enrich/buckets.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -766,7 +766,7 @@ describe("resolverEnv", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx vitest run --project router packages/router/test/enrich/resolver.test.ts`
+Run: `npx vitest run packages/router/test/enrich/resolver.test.ts`
 Expected: FAIL — cannot resolve `../../src/enrich/resolver.js`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -983,7 +983,7 @@ function parsePrUrl(url: string): Repo | undefined {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `npx vitest run --project router packages/router/test/enrich/resolver.test.ts`
+Run: `npx vitest run packages/router/test/enrich/resolver.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1119,7 +1119,7 @@ The egress test skips `state.task` **by key path**, not by inspecting the value.
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx vitest run --project router packages/router/test/cli/run.test.ts`
+Run: `npx vitest run packages/router/test/cli/run.test.ts`
 Expected: FAIL — `runCommand` is not consumed by `executeRun`; no `enrichment` in the JSON; no card line.
 
 - [ ] **Step 3: Accept enrichment in `decideRoute`**
@@ -1245,7 +1245,7 @@ In `packages/router/src/presentation/decision-card.ts`, add `taskSize?: string;`
 
 - [ ] **Step 6: Run the full suite**
 
-Run: `npx vitest run --project router`
+Run: `npx vitest run packages/router`
 Expected: PASS. Existing `run.test.ts` cases that pass no `runCommand` resolve to `{ status: "skipped" }`, because their task strings contain no PR reference.
 
 - [ ] **Step 7: Commit**
@@ -1294,7 +1294,7 @@ it("passes --no-enrich through to executeRun", async () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx vitest run --project router packages/router/test/cli/entrypoint.test.ts -t "no-enrich"`
+Run: `npx vitest run packages/router/test/cli/entrypoint.test.ts -t "no-enrich"`
 Expected: FAIL — the option is not registered.
 
 - [ ] **Step 3: Register the flag**
@@ -1364,7 +1364,7 @@ Add to `docs/privacy.md`, after the first bullet:
 
 - [ ] **Step 6: Run the suite and the formatter**
 
-Run: `npx vitest run --project router && npx prettier --check docs/privacy.md`
+Run: `npx vitest run packages/router && npx prettier --check docs/privacy.md`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
