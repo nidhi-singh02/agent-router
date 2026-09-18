@@ -195,6 +195,38 @@ describe("resolveEnrichment", () => {
     expect(result).toEqual({ status: "unresolved", reason: "timed-out" });
   });
 
+  it("reports timed-out when the remote lookup times out, without calling gh", async () => {
+    const inspect = vi.fn();
+    const result = await resolveEnrichment({
+      task: "refactor PR 9",
+      run: scripted(
+        {
+          "git rev-parse": toplevel,
+          "git remote": { ok: false, code: null, timedOut: true },
+          "gh pr": { ok: true, stdout: prPayload() },
+        },
+        inspect,
+      ),
+      env: {},
+    });
+    expect(result).toEqual({ status: "unresolved", reason: "timed-out" });
+    const calls = inspect.mock.calls.map(([input]) => input as Input);
+    expect(calls.some((input) => input.command === "gh")).toBe(false);
+  });
+
+  it("resolves with the comparison skipped when the repository has no origin", async () => {
+    const result = await resolveEnrichment({
+      task: "refactor PR 9",
+      run: scripted({
+        "git rev-parse": toplevel,
+        "git remote": { ok: false, code: 2 },
+        "gh pr": { ok: true, stdout: prPayload({ url: "https://github.com/other/repo/pull/9" }) },
+      }),
+      env: {},
+    });
+    expect(result).toMatchObject({ status: "resolved", churn: 412, changedFiles: 9 });
+  });
+
   it("stops spawning once the total budget is spent", async () => {
     const inspect = vi.fn();
     let clock = 0;

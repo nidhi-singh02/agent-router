@@ -101,9 +101,11 @@ export async function resolveEnrichment(input: {
   }
 
   const remote = await run("git", ["remote", "get-url", "origin"], cwd);
-  if (!remote) {
+  if (!remote || remote.timedOut) {
     return { status: "unresolved", reason: "timed-out" };
   }
+  // A lookup that ran and failed is the "no origin configured" path, where skipping the
+  // comparison is sound. A timeout says nothing about the remote, so it must not.
   const local = remote.ok ? parseRemote(remote.stdout.trim()) : undefined;
 
   // The PR number is re-emitted from a parsed integer, never the matched substring.
