@@ -3,50 +3,62 @@
 **Date:** 2026-09-18
 **Status:** approved design, not yet implemented
 **Scope:** `packages/router`
+**Supersedes:** the first revision of this file (commit `c894da5`), which specified a
+larger feature. Four reviews found twelve blocker-level defects in it; most attached to
+parts of the feature that this revision removes. See "What was cut and why".
 
 ## Problem
 
 The routing classifier sees only the raw prompt string. `decideRoute` builds its
 classification state as `{ task, candidateCount }` (`semantic/decision-engine.ts:73`),
 so "refactor PR 9" is indistinguishable from a one-line typo fix. Every downstream
-judgment — task family, complexity, consequence, reasoning effort — is made without
-any measurement of the work.
+judgment — task family, complexity, consequence, reasoning effort — is made without any
+measurement of the work.
 
-Two related gaps compound it:
+## Goal
 
-- `estimateTaskCostRatio` is `relativeQuotaCost * 0.02` (`policy/cost-estimator.ts`),
-  a constant that ignores task size entirely.
-- `buildHandoff` is always called with `relevantFiles: []`, `completedChecks: []`,
-  and `remainingAcceptanceCriteria: []` (`commands/run.ts:199-205`), so the
-  cross-phase context channel carries nothing.
+When a prompt names a pull request in this repository, measure that PR's size and give
+the classifier a bucketed summary of it.
 
-## Goals
-
-1. Give the classifier a real measurement of task size when the prompt names a
-   resolvable reference.
-2. Fill `handoff.relevantFiles` with the files a task actually touches.
-3. Record what a size-aware cost estimate _would_ have produced, so the estimate can
-   be calibrated against observed consumption.
+That is the whole feature.
 
 ## Non-goals
 
-- **Size-dependent cost gating eligibility.** Deferred; see "Deferred: the cost gate".
-- **PR titles, branch names, or PR body text in any output.** Explicitly out of scope.
-  A later "make the handoff more useful" change must not add them without a second
-  security review.
-- Issue-ref resolution. PR refs only.
-- Resolving refs for any repository other than the one the CLI is running in.
+- **File paths.** No path from any source enters classification state, the decision
+  card, `result.json`, the session record, or a launched agent's prompt.
+- **`handoff.relevantFiles`.** Stays `[]`. A separate spec, with a provenance gate
+  designed in from the start.
+- **Size-dependent cost.** `estimateTaskCostRatio` is untouched. See "Deferred".
+- **Calibration.** Recording an advisory multiplier is in scope; consuming it is not.
+- **Local `git` resolution.** No `git diff` branch. A PR reference resolves through
+  `gh` or not at all.
+- **Issue references.**
+- **PR titles, bodies, branch names, head-repository fields.** Excluded at the query,
+  never fetched.
+
+## What was cut and why
+
+| Cut                               | Reason                                                                                                                                                                                                                                                       |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `relevantFiles` population        | A path passing charset validation still points at a file whose contents are attacker-authored, and an agent told a file is "relevant" opens it. Validation constrains spelling; the attack does not need spelling. Needs a provenance gate and its own spec. |
+| `areas`, `extensions`, `spread`   | Derived from paths. As arrays of enums with unspecified ordering they carry ~232 bits of attacker-ordered data into TypeSafe state, defeating the "no free-form string field" safety argument.                                                               |
+| Local `git diff --numstat` branch | An attacker-supplied `.gitattributes` marking a file `binary` makes numstat emit `-`, which `parseInt` turns into `NaN`, which zod rejects _after_ the agent has launched — orphaning it and leaking its reservation.                                        |
+| `gh pr view --json files`         | Silently caps at 100 files, well under any byte cap, so a 441-file PR reports as complete. Only `changedFiles` (a scalar) is accurate.                                                                                                                       |
+| Handoff schema constraint         | `session-repository` `get()`/`list()` parse stored payloads, so tightening the schema can brick existing session chains on read.                                                                                                                             |
+| Submodule and worktree detection  | Fed only a bucket, and `result.json` had no field to render them into.                                                                                                                                                                                       |
+| Memoization                       | Each `router run` is a separate process; an in-process memo cannot span a `--session` chain.                                                                                                                                                                 |
+| Calibration loop                  | `reconcile` overwrites the ratio on every reservation for an account and returns nothing; `usageRefresh` has no access to sessions or reservations. Undesigned.                                                                                              |
 
 ## Decisions
 
-| Decision          | Choice                                                               | Rationale                                                              |
-| ----------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Resolution source | `gh` for PR refs, local `git` only for explicitly named inline paths | A bare PR number is the motivating case and local git cannot answer it |
-| Ref kinds         | PR refs and inline file paths                                        | Issue refs add surface without adding size signal                      |
-| TypeSafe egress   | Bucketed numbers and closed-vocabulary enums only                    | A raw line count fingerprints a private diff                           |
-| Handoff paths     | Full paths, validated, capped at 20                                  | The next agent must be able to open them                               |
-| Cost estimate     | Unchanged constant; buckets computed and logged only                 | Uncalibrated gating has asymmetric failure                             |
-| Failure channel   | `result.json` + decision card                                        | `stderr` is invisible under `--json`                                   |
+| Decision        | Choice                                                  | Rationale                                                                                                                       |
+| --------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Ref syntax      | `PR 9`, `pr #9`, `PR#9`. Never bare `#9`                | Bare `#9` is the canonical _issue_ form, and an unsolicited authenticated request should not fire on a prompt pasted from Slack |
+| Resolution      | `gh` only                                               | No local branch means no worktree-sourced input                                                                                 |
+| TypeSafe egress | Three scalar fields, all bucketed or boolean            | A raw churn count fingerprints a private diff                                                                                   |
+| Cost estimate   | Unchanged constant                                      | Uncalibrated gating fails asymmetrically                                                                                        |
+| Failure channel | `result.json` + decision card, closed-vocabulary reason | `stderr` is invisible under `--json`                                                                                            |
+| Reason text     | Closed enum, never subprocess output                    | The CLI's output is read by launched agents, so it is a prompt surface                                                          |
 
 ### Why the cost gate is deferred
 
@@ -62,292 +74,322 @@ permitted moves with the multiplier:
 | 4          | 0.24           | >= 0.64            |
 | 8          | 0.48           | >= 0.88            |
 
-A bucket table is a guess about which row a given diff belongs in, and the guess sets
-that headroom requirement directly. The failure is asymmetric: too low costs nothing
-relative to today's flat estimate, while too high hard-denies routes with a bare
-`code 2` that names no cause. Deferring also removes two defects outright rather than
-mitigating them — an unclamped ratio cannot breach `RatioSchema`, and a same-phase
-resume cannot be evicted by a re-measured diff.
+The failure is asymmetric: too low costs nothing relative to today's flat estimate,
+while too high hard-denies routes with a bare `code 2` naming no cause. This change
+records what the buckets _would_ have estimated so a later change can calibrate against
+observed consumption.
 
 ## Architecture
 
 New module `packages/router/src/enrich/`:
 
-| File              | Responsibility                                                             |
-| ----------------- | -------------------------------------------------------------------------- |
-| `ref-detector.ts` | Pure. Prompt string -> `DetectedRefs`. No I/O.                             |
-| `resolver.ts`     | Ref-kind routed resolution via `runCommand`. Returns `EnrichmentLocal`.    |
-| `local.ts`        | `EnrichmentLocal` type. Full paths. Never exported past `enrich/`.         |
-| `shapes.ts`       | `EnrichmentLocal` -> `EnrichmentShapes`. Closed vocabulary.                |
-| `buckets.ts`      | Deterministic size -> bucket and advisory multiplier. Logged, not applied. |
+| File              | Responsibility                                                    |
+| ----------------- | ----------------------------------------------------------------- |
+| `ref-detector.ts` | Pure. Prompt -> `number[]` of PR numbers. No I/O.                 |
+| `resolver.ts`     | One `gh` call via `runCommand`. Returns `Resolution`.             |
+| `buckets.ts`      | Churn and file count -> `EnrichmentShapes` + advisory multiplier. |
 
 ### Types
 
 ```ts
-// enrich/ref-detector.ts — unforgeable by construction
-export interface DetectedRefs {
-  prNumbers: number[]; // parsed integers, never matched substrings
-  paths: string[]; // charset-validated, relative, no leading "-"
-}
+// ref-detector.ts
+export function detectPrRefs(task: string): number[];
+// Matches /\b(?:PR|pr)\s*#?\s*(\d{1,7})\b/g. Never a bare "#9".
+// Returns parsed integers, deduplicated, in order of appearance.
 
-// enrich/local.ts — NOT exported past enrich/
-export interface EnrichmentLocal {
-  prNumber?: number;
-  repo?: string;
-  files: { path: string; added: number; removed: number }[];
-  additions: number;
-  deletions: number;
-  changedFiles: number;
-  truncated: boolean;
-}
+// resolver.ts
+export type Resolution =
+  | {
+      status: "resolved";
+      churn: number;
+      changedFiles: number;
+      prNumber: number;
+      repo: { owner: string; name: string };
+    }
+  | { status: "skipped" }
+  | { status: "unresolved"; reason: UnresolvedReason };
 
-// enrich/shapes.ts — the ONLY type decideRoute accepts.
-// No free-form string field anywhere.
+export type UnresolvedReason =
+  | "no-refs"
+  | "not-a-repository"
+  | "gh-not-installed"
+  | "gh-not-authenticated"
+  | "github-unavailable"
+  | "timed-out"
+  | "pr-not-found"
+  | "repo-mismatch"
+  | "empty-diff"
+  | "malformed-response";
+// Closed enum. Never subprocess stdout or stderr.
+
+// buckets.ts — the ONLY type decideRoute accepts. No string field, no array field.
 export interface EnrichmentShapes {
   sizeBucket: "trivial" | "small" | "medium" | "large" | "very-large";
-  fileCountBucket: "1" | "2-5" | "6-20" | "21-100" | "100+";
-  areas: ("src" | "test" | "docs" | "config" | "other")[];
-  extensions: ("ts" | "js" | "json" | "md" | "sql" | "yaml" | "other")[];
-  spread: "single-dir" | "few-dirs" | "many-dirs";
+  fileCountBucket: "1" | "2-5" | "6-20" | "21-100" | "101+";
   truncated: boolean;
 }
 ```
 
-The safety property is structural: no field of `EnrichmentShapes` can _hold_ a path,
-so no path can reach TypeSafe state. Validation is a corollary, not the mechanism.
+`EnrichmentShapes` contains no free-form string and no array, so it can carry neither a
+path nor attacker-chosen ordering. Its full domain is 5 x 5 x 2 = 50 states.
+
+### Thresholds
+
+`churn = additions + deletions`, both from `gh pr view --json additions,deletions`.
+
+| `sizeBucket` | churn   |
+| ------------ | ------- |
+| `trivial`    | 1-9     |
+| `small`      | 10-49   |
+| `medium`     | 50-249  |
+| `large`      | 250-999 |
+| `very-large` | 1000+   |
+
+Churn `0` is `unresolved: empty-diff`, never `trivial`.
+
+`fileCountBucket` from `changedFiles`: `1`, `2-5`, `6-20`, `21-100`, `101+`.
+
+`advisoryMultiplier`, recorded only, never applied: `trivial` 0.5, `small` 1,
+`medium` 2, `large` 4, `very-large` 8. Anchoring `medium` at twice today's flat estimate
+keeps the deferred-gate table above directly comparable to future calibration data.
 
 ### Flow in `commands/run.ts`
 
-1. Detect refs. No refs -> skip enrichment entirely, no subprocess.
-2. Resolve (see "Resolver contract"). Failure -> route unenriched, record reason.
-3. `decideRoute` receives `enrichment?: EnrichmentShapes` as a typed parameter and
-   constructs classification state from that field alone.
-4. Eligibility, ranking, effort: unchanged. `estimateTaskCostRatio` unchanged.
-5. `buildHandoff` receives validated full paths as `relevantFiles`.
-6. `result.json.enrichment` and one decision-card line report status.
+1. `detectPrRefs(task)`. Empty -> `{ status: "skipped" }`, no subprocess.
+2. Resolve the **first** detected ref only. At most one `gh` call per run.
+3. `decideRoute` receives `enrichment?: EnrichmentShapes` as a typed parameter.
+4. Eligibility, ranking, effort: unchanged logic. `estimateTaskCostRatio` untouched.
+5. `result.json.enrichment` and one decision-card line.
 
-`candidateCount` stays in the classification state. No reordering is required, because
-no model-produced number feeds the cost estimate.
+`candidateCount` stays in the classification state. No reordering: nothing
+model-produced feeds the cost estimate.
+
+`enrichment` is added to the **classification** state (`decision-engine.ts:78`) and the
+**effort** state (`:184`), because reasoning effort is where task size bears most
+directly. It is _not_ added to the ranking state, which concerns account and model
+capacity rather than task size.
 
 ## Resolver contract
 
-Route by ref **kind**, never by fallback order. A local working-tree diff must never
-answer a named PR ref — in a dirty worktree that silently sizes the task from
-unrelated uncommitted work.
+One command:
 
-| Input                   | Command                                                                                                       |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------- |
-| PR ref                  | `gh pr view <n> --json additions,deletions,changedFiles,files,baseRefName,headRepository,headRepositoryOwner` |
-| Inline paths, no PR ref | `git diff --numstat -- <validated paths>`                                                                     |
-| Neither                 | No subprocess                                                                                                 |
+```
+gh pr view <n> --json additions,deletions,changedFiles,url,isCrossRepository
+```
 
-`gh pr diff --stat` does not exist. Verified against gh 2.87.3: `gh pr diff` accepts
-only `--color`, `--name-only`, `--patch`, `--web`. Use `gh pr view --json`.
+`gh pr diff --stat` does not exist: verified against gh 2.87.3, `gh pr diff` accepts
+only `--color`, `--name-only`, `--patch`, `--web`.
 
-Use `--numstat`, not `--stat`. `--stat` is human-formatted and truncates long paths
-with `...`.
+Do not request `files`, `title`, `body`, `baseRefName`, `headRepository`, or
+`headRepositoryOwner`. Exclusion at the query is checkable in review; exclusion at the
+render site is not.
+
+There is no `baseRepository` field. The base repository is parsed from `url`
+(`https://<host>/<owner>/<repo>/pull/<n>`).
 
 ### Repository identity
 
-Resolve once per run:
+- `git rev-parse --show-toplevel` must succeed. Its result is passed as an explicit
+  `cwd` to every subprocess. Failure -> `not-a-repository`.
+- `gh repo view --json nameWithOwner` in that `cwd` gives the local repository.
+- The base repo parsed from the PR's `url` must equal it, case-insensitively.
+  Mismatch -> `repo-mismatch`, and the resolution is discarded.
+- A non-`github.com` host in `url` is permitted only if it matches the host `gh`
+  resolved for the local repo; otherwise `repo-mismatch`.
+- `isCrossRepository` is recorded for the follow-up handoff spec. It has no effect here.
 
-- `git rev-parse --show-toplevel` must succeed; pass the result as an explicit `cwd`.
-  `runCommand` sets no `cwd` (`collectors/command-runner.ts:18-21`), so it would
-  otherwise inherit the CLI's directory.
-- `git rev-parse --git-common-dir` to detect a worktree. Worktrees are usable, but the
-  worktree and branch must be recorded and displayed; do not assume it is the PR's branch.
-- Compare `gh repo view --json nameWithOwner` against the PR's **base** repository.
-  Compare base, not head: fork PRs legitimately differ on head. Refuse on mismatch.
-- Submodules collapse to a single `Subproject commit` line, under-reporting size.
-  Detect via `git submodule status` and mark the result as a lower bound.
-- Not a repository: no local resolution, PR refs unresolved.
+### Subprocess environment
+
+The resolver constructs its environment explicitly. It must not pass `process.env`, and
+must not reuse `sanitizeRuntimeEnv` (`commands/runtime.ts:36`), whose allowlist omits
+`gh`'s auth variables.
+
+Forwarded: `PATH`, `HOME`, `XDG_CONFIG_HOME`, `GH_TOKEN`, `GITHUB_TOKEN`,
+`GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN`, `LANG`, `LC_ALL`, `TMPDIR`.
+
+Explicitly **not** forwarded, because each redirects the request or the credential:
+`GH_REPO` (accepts `[HOST/]OWNER/REPO`, the same redirect `-R` provides, via the
+environment), `GH_HOST`, `GH_CONFIG_DIR`, `GH_PATH`.
+
+`gh` aliases and extensions need no handling: `gh alias set pr …` is refused because
+`pr` is a core command, and extensions cannot override core commands.
 
 ## Security requirements
 
-These are blockers, not preferences. Each was verified empirically during review.
+### S1 — Argument construction
 
-### B1 — Argument injection
+`runCommand` uses `spawn` with an args array, so there is no shell injection. The
+remaining risk is argument injection: `git` and `gh` treat any token starting with `-`
+as an option.
 
-`spawn` with an args array prevents shell injection, but `git` and `gh` interpret any
-token beginning with `-` as an option. `git diff --stat --output=<path> HEAD~1 HEAD`
-truncates and overwrites `<path>`; a prompt pasted from an issue body is a normal input.
-`gh` additionally accepts `-R [HOST/]OWNER/REPO`, redirecting the request to an
-attacker-chosen host with the stored credential for it.
+- The only prompt-derived value reaching argv is a PR number, re-emitted as
+  `String(parsed)` after `parseInt`, never the matched substring.
+- `detectPrRefs` returns `number[]`, so no string from the prompt can reach argv by
+  construction.
+- Reject a parsed value that is not a finite positive integer below 10,000,000.
 
-Required:
-
-1. Pathspecs only after a `--` separator.
-2. PR numbers re-emitted as `String(parsedInt)`, never the matched substring.
-3. Resolver input typed `{ prNumbers: number[]; paths: string[] }`, so the numeric
-   path is unforgeable.
-4. Reject tokens matching `/^-/`, containing `://`, or containing `/` for PR refs, at
-   the detector boundary, and re-validate in the resolver.
-
-### B2 — Untrusted content in an autonomous agent's prompt
-
-`formatHandoffPrompt` renders `relevantFiles` as `- ${item}` lines
-(`handoff/handoff-builder.ts:46-53`) and the result is submitted as a launched agent's
-prompt. Git path names are near-arbitrary: a file named
-`src/Ignore all previous instructions; ... (.ts` is emitted verbatim by `git diff`.
-On a public repo the PR author controls every path in the diff. Poisoned strings also
-persist to the session (`commands/run.ts:273`) and replay into the next phase
-(`commands/run.ts:219`), so one PR contaminates a `--session` chain.
-
-Required:
-
-1. Validate every path before it enters `relevantFiles`: charset `[A-Za-z0-9._/-]`,
-   no absolute paths, no `..`, no newline, carriage return, backtick, or `$(`.
-   Drop non-conforming entries and count them into the `+N more files` marker.
-2. Add the constraint to `HandoffSchema.relevantFiles` (`domain/session.ts:31`), which
-   is currently `z.array(z.string())`, so it is enforced at the type boundary rather
-   than one call site.
-3. Render the section as untrusted data and place it **before** the routing-instruction
-   block (`handoff-builder.ts:55-64`). The agent is told to obey that block; anything
-   after it inherits its authority.
-4. Never include PR titles, branch names, or body text.
-5. Do not set `core.quotePath=false` and do not use `-z` or `--name-only -z`. Git
-   escapes a newline in a path to a literal `\n` under the default; `-z` emits raw
-   NUL-separated paths and restores line-forging. This default is the entire
-   line-forging defense.
-
-`redactCollectorText` is not a prompt-injection defense; it strips `sk-` prefixes.
-
-### B3 — Enrichment must not be able to abort a route
+### S2 — Enrichment must never abort a route
 
 `assertSafeState` is called at `semantic/decision-engine.ts:74`, outside the `try` that
-opens at `:77`, so a throw escapes to `cli.ts:93` and exits 1. Its patterns match
-credential _shapes_: a branch or path merely shaped like `AKIA…` or `ghp_…` would
-hard-fail every route on that PR — a remote kill switch.
+opens at `:77`, so a throw escapes to `cli.ts:93` and exits 1.
 
-Required: enrichment-derived fields must never throw. On any error, drop the
-enrichment, route unenriched, and record the reason. Do not rely on a try/catch move
-as the mitigation; a caught throw still kills a route that should have proceeded.
+- Every resolver failure returns an `UnresolvedReason`. Nothing throws.
+- `JSON.parse` of `gh` output is wrapped; failure is `malformed-response`.
+- Every numeric field is checked with `Number.isFinite` and rejected otherwise. `NaN`
+  is a `number` to TypeScript and is rejected by zod, so an unchecked `NaN` becomes a
+  throw at session-parse time, after the agent has already launched.
+- No enrichment value may cause `RouterSessionSchema.parse` to fail. The recorded
+  fields are the three `EnrichmentShapes` values plus two finite integers.
 
-Do not extend `assertSafeState`'s regexes for diff content. A denylist over
-`JSON.stringify(state)` cannot certify unknown content, and the patterns are both too
-weak for it (file contents never arrive with `--json files`, and names like
-`secrets/prod.env` match nothing) and too trigger-happy on it. `assertSafeState`
-remains a backstop on caller-supplied task text only.
+### S3 — Output is a prompt surface
 
-### B4 — Do not reuse `collectVerifiedStatus`
+The `model-router` skill instructs launched agents to run `router session <id>` and
+`router run --session <id>`, so `output` and `result.json` are read by a model.
+
+- `enrichment.reason` is an `UnresolvedReason` enum value. Never `gh` stdout or stderr.
+- The card renders one line of fixed shape. `owner` must match `^[A-Za-z0-9-]{1,39}$`
+  and `repo` `^[A-Za-z0-9._-]{1,100}$`; otherwise the repo is omitted from the line.
+  A local checkout can itself be an attacker-named clone.
+
+### S4 — Do not reuse `collectVerifiedStatus`
 
 `collectors/verified-command.ts:22` does `raw = result.ok ? result.stdout : result.stderr`,
-feeding a `gh` error message to the parser as if it were diff data. It also hardcodes
-the collector timeout and byte cap and passes no `env` or `cwd`. The resolver calls
-`runCommand` directly.
+feeding an error message to the parser as data. It also hardcodes the collector timeout
+and byte cap and passes no `env` or `cwd`. The resolver calls `runCommand` directly.
 
-### Enforcement
+### S5 — Egress
 
-1. `EnrichmentShapes` has no free-form `string` field. (Load-bearing.)
-2. `decideRoute` accepts `enrichment?: EnrichmentShapes` and builds state from it alone.
-3. ESLint `no-restricted-imports`: `semantic/**` may not import `enrich/local*`.
-4. Test: snapshot `client.calls` — `createRecordingClient` already captures every
-   request (`semantic/typesafe-client.ts:13-23`) — and fail on any string value
-   containing `/` or matching a file-extension pattern. (Load-bearing: the only check
-   that catches an unforeseen path.)
+`EnrichmentShapes` has 50 possible states, so at most ~5.6 bits per run describe a
+private repository's diff to a third party. `docs/privacy.md` must be amended to record
+this: it currently promises only that credentials are rejected.
 
-## Resource limits
+`--no-enrich` disables resolution, and the same switch is settable in config so it can
+be turned off permanently without per-invocation flags.
 
-- At most 3 refs resolved per run; at most 1 network call per run.
-- 2s per call, 3s total enrichment budget. `COLLECTOR_TIMEOUT_MS` (5s) is for local
-  collectors, not a network hop on an interactive path.
-- 64KB byte cap. Detect truncation by comparing returned length to `maxBytes`, and
-  kill the child on overflow — `command-runner.ts:41-45` stops accumulating but lets
-  the process run to its timeout.
-- Memoize by `(repoNameWithOwner, prNumber)` so a `--session` chain does not re-fetch.
-- `--no-enrich` flag; auto-skip under `--json`.
+## Infrastructure changes
 
-`CommandResult` needs `code: number | null` and `timedOut: boolean` added
-(`command-runner.ts:25-36` returns only `ok`) to distinguish the failure cases below.
+`collectors/command-runner.ts`:
+
+- `runCommand` input gains `cwd?: string`.
+- `CommandResult` gains `code: number | null` and `timedOut: boolean`, needed to
+  distinguish failure-matrix rows.
+- No change to overflow behavior. Killing the child on byte overflow would regress
+  existing collectors, which currently truncate and return `ok: true`.
+
+`commands/run.ts`: `RunDeps` gains `runCommand?: typeof runCommand`, defaulted to the
+real implementation and threaded from the existing `RuntimeOverrides.runCommand`
+(`commands/runtime.ts:95,149`). This is the test seam; the repo's established pattern is
+parameter injection, not module mocking (`collectors/cursor/cursor-collector.ts:11`).
+
+## Limits
+
+- At most one PR ref resolved per run; at most one `gh` call per run.
+- 2s timeout. `COLLECTOR_TIMEOUT_MS` (5s) is for local collectors, not a network hop on
+  an interactive path.
+- 64KB byte cap. The response is a handful of scalars, so the cap is a backstop only.
+- No memoization; each run re-detects from its own task string.
+- Enrichment runs under `--dry-run`: a dry run previews the route, and an unenriched
+  preview previews a different route than the real one.
+- Enrichment runs on a `--session` resume, re-detected from the new task string. Refs in
+  one phase's prompt are not refs in the next phase's.
+- No auto-skip under `--json`. Plugin consumers are the audience for an unresolved size.
 
 ## Failure matrix
 
-| Case                           | Behavior                                                               |
-| ------------------------------ | ---------------------------------------------------------------------- |
-| No refs detected               | No subprocess. Card: `not resolved (no refs)`. Silent.                 |
-| Refs, cwd not a repository     | `unresolved: not a repository`                                         |
-| `gh` missing (ENOENT)          | `unresolved: gh not installed`. No retry.                              |
-| `gh` unauthenticated (exit 4)  | `unresolved: gh not authenticated (run gh auth login)`                 |
-| Rate-limited or 5xx            | `unresolved: github unavailable`. No retry in the hot path.            |
-| Timeout                        | `unresolved: timed out after Nms`. Distinct from failure.              |
-| PR not found                   | `unresolved: PR #N not found in <owner/repo>`. Name the repo.          |
-| Private, no access             | Same user-visible text as not-found. Log the exit code.                |
-| Truncated output               | `resolved (truncated; size is a lower bound)`. Never present as exact. |
-| Resolved from a different repo | Refuse to use it.                                                      |
+| Case                             | `status`     | `reason`                      |
+| -------------------------------- | ------------ | ----------------------------- |
+| No PR ref in the prompt          | `skipped`    | — (no subprocess, no warning) |
+| `cwd` not a repository           | `unresolved` | `not-a-repository`            |
+| `gh` missing (ENOENT)            | `unresolved` | `gh-not-installed`            |
+| `gh` not authenticated (exit 4)  | `unresolved` | `gh-not-authenticated`        |
+| Any other non-zero exit          | `unresolved` | `github-unavailable`          |
+| Timeout                          | `unresolved` | `timed-out`                   |
+| PR does not exist, or is private | `unresolved` | `pr-not-found`                |
+| Base repo != local repo          | `unresolved` | `repo-mismatch`               |
+| `changedFiles` 0 or churn 0      | `unresolved` | `empty-diff`                  |
+| Unparseable or non-finite JSON   | `unresolved` | `malformed-response`          |
+| Resolved                         | `resolved`   | —                             |
 
-Warnings surface when a ref was detected and resolution failed. The last two rows are
-cases where resolution **succeeded with a wrong answer**, so they surface regardless.
+Rate-limited and 5xx both exit 1 and are indistinguishable without reading stderr, which
+S3 forbids, so they share `github-unavailable`.
+
+Private-but-existing and not-found share `pr-not-found` so the CLI does not disclose
+existence.
+
+`truncated` is always `false` in this revision: `additions`, `deletions` and
+`changedFiles` are scalars from the API and are never partial. The field is retained
+because the follow-up handoff spec will need it.
 
 ## Output
 
-Add to `result.json`:
+`result.json` gains:
 
 ```ts
 enrichment: {
-  status: "skipped" | "resolved" | "truncated" | "unresolved";
-  reason?: string;
-  repo?: string;
-  refs?: number[];
-  files?: number;
-  sizeBucket?: string;
+  status: "skipped" | "resolved" | "unresolved";
+  reason?: UnresolvedReason;
+  prNumber?: number;
+  repo?: string;          // "owner/name", validated per S3
+  sizeBucket?: EnrichmentShapes["sizeBucket"];
+  fileCountBucket?: EnrichmentShapes["fileCountBucket"];
 }
 ```
 
-One decision-card line, including repo identity:
-`Task size: 412 lines across 9 files (PR #9 in owner/repo)`
+One decision-card line:
 
-Do not write to `stderr` from `executeRun`. `cli.ts:91` emits only `result.json` under
-`--json`, every existing diagnostic rides inside `output`/`json`, and plugin consumers
-are precisely the audience for an unresolved size.
+- resolved: `Task size: large (250-999 lines), 21-100 files (PR #9 in owner/repo)`
+- unresolved: `Task size: unresolved (gh-not-authenticated)`
+- skipped: line omitted
 
-## Measurement for calibration
-
-Persist `{ resolvedSize, sizeBucket, advisoryMultiplier, estimatedCostRatio }` on the
-session record. `advisoryMultiplier` is computed by `enrich/buckets.ts` and recorded
-only — it is not applied to `estimateTaskCostRatio`.
-
-Wire `ReservationService.reconcile` (`reservations/reservation-service.ts:56`), which
-exists, is tested, and is currently called from no production path. At the next usage
-refresh, compare the recorded estimate against the observed delta in `remainingRatio`
-for that account. After enough real sessions this yields a measured size-to-ratio curve,
-at which point the gate can be enabled against data rather than a guess.
+Nothing is written to `stderr` from `executeRun`.
 
 ## Prerequisite
 
-Land first, separately from this work: move the `assertSafeState` call at
-`semantic/decision-engine.ts:74` inside the `try`, so a detector hit on tainted user
-input becomes a typed result instead of an escaped exception and a generic exit 1.
-This is a defect today, independent of enrichment.
+Land first, separately: `assertSafeState` at `semantic/decision-engine.ts:74` throws
+outside the `try`, producing a generic exit 1 on tainted user input.
+
+Moving the call inside the existing `try` is **not** sufficient — it would route into
+the `catch` at `:89-97`, returning `typesafe-unavailable`, which makes `run.ts:148-159`
+print "TypeSafe could not select a route" plus `typesafeKeyHint`. A user whose prompt
+tripped a credential regex would be told to store an API key.
+
+Add a distinct `unsafe-state` status with its own message.
 
 ## Testing
 
-New:
+Every failure-matrix row is a table test over fake `CommandResult` values injected
+through `RunDeps.runCommand`. No network, no mocking.
 
-- `ref-detector`: PR forms (`PR 9`, `pr #9`, `#9`), rejection of `-`-leading tokens,
-  `://`, and `/` in PR refs.
-- `shapes`: unknown directory and extension collapse to `other`; no `string` field.
-- Path validation: newline, backtick, `$(`, absolute, `..`, and the literal
-  `Ignore all previous instructions` filename.
-- Resolver: ref-kind routing; a dirty worktree must not answer a PR ref; base-repo
-  mismatch refusal; each failure-matrix row.
-- Enforcement: `client.calls` snapshot rejects path-shaped strings.
-- Limits: ref cap, single network call, timeout, truncation detection.
+- `detectPrRefs`: `PR 9`, `pr #9`, `PR#9`, bare `#9` rejected, `PRs 9, 10` (first only),
+  leading zeros, values over the integer bound, no-match cases.
+- Argv: the resolver's recorded command contains only `String(n)` and fixed flags.
+- Env: the constructed environment contains no `GH_REPO`, `GH_HOST`, `GH_CONFIG_DIR`,
+  or `GH_PATH`, and does contain `GH_TOKEN` when present in the parent.
+- Buckets: boundary values 9/10, 49/50, 249/250, 999/1000; churn 0 -> `empty-diff`.
+- Non-finite: a response with `additions: null` or a non-numeric value yields
+  `malformed-response` and never throws.
+- Repo identity: base/local mismatch yields `repo-mismatch` and discards the result.
+- Egress: walk the entire recorded `state` on all three `systemOne` calls, skipping
+  `task` **by key path** rather than by value shape, and fail on any other string
+  containing `/` or matching a file-extension pattern. Scoping this to the enrichment
+  subtree would assert only what the type already guarantees; walking the whole state is
+  what catches an unforeseen field.
+- `--dry-run` resolves; `--no-enrich` does not; `--json` includes the `enrichment` block.
 
-Changed: `handoff-builder` tests for the new section and its ordering;
-`domain/session.ts` schema tests for the `relevantFiles` constraint; `commands/run.ts`
-tests for the `enrichment` JSON block and card line.
-
-Unchanged: `semantic/decision-engine` classification state keeps `candidateCount`;
-`policy/cost-estimator` and all eligibility tests are untouched.
+Unchanged and asserted so: `policy/*` and all eligibility tests, `estimateTaskCostRatio`,
+`handoff.relevantFiles` remains `[]`.
 
 ## Deferred
 
-- Size-dependent cost gating eligibility, pending calibration data.
-- Issue-ref resolution.
-- `cacheAffinity` is computed and stored (`commands/run.ts:239`) but never read;
-  decide separately whether to wire or delete it.
-- Reservation `ttlMs` is hardcoded at 60s (`commands/run.ts:181`); revisit when cost
-  becomes size-dependent.
-- Session persistence happens after launch (`commands/run.ts:208` then `:240`),
-  so a schema error would orphan a launched agent. Not reachable while cost is
-  constant; fix before enabling the gate.
+Each needs its own spec.
+
+- **Handoff file lists.** Requires a provenance gate: populate only when
+  `isCrossRepository` is false, since a path names a file whose contents an agent will
+  open. Charset validation is not a sufficient defense.
+- **Size-dependent cost gating eligibility.** Requires calibration data.
+- **Calibration.** `reconcile` cannot attribute a delta to a session and `usageRefresh`
+  cannot see sessions; both need redesign.
+- **Session persistence ordering.** `commands/run.ts` persists after launch, so a schema
+  failure orphans a launched agent. Not reachable from this change, because every
+  recorded enrichment value is a validated enum or finite integer.
+- **`cacheAffinity`.** Computed and stored, never read. Wire it or delete it.
