@@ -146,6 +146,90 @@ describe("resolveEnrichment", () => {
     expect(result).toEqual({ status: "unresolved", reason: "repo-mismatch" });
   });
 
+  it("reports repo-mismatch when the PR url names a different host", async () => {
+    const result = await resolveEnrichment({
+      task: "refactor PR 9",
+      run: scripted(happy({ url: "https://evil.example/owner/repo/pull/9" })),
+      env: {},
+    });
+    expect(result).toEqual({ status: "unresolved", reason: "repo-mismatch" });
+  });
+
+  it.each([
+    ["scp", "git@github.com:owner/repo.git\n"],
+    ["https", "https://github.com/owner/repo.git\n"],
+    ["ssh", "ssh://git@github.com/owner/repo\n"],
+    ["https without suffix", "https://github.com/owner/repo\n"],
+  ])("resolves when the %s remote form names the same host", async (_form, stdout) => {
+    const result = await resolveEnrichment({
+      task: "refactor PR 9",
+      run: scripted({
+        "git rev-parse": toplevel,
+        "git remote": { ok: true, stdout },
+        "gh pr": { ok: true, stdout: prPayload() },
+      }),
+      env: {},
+    });
+    expect(result).toMatchObject({ status: "resolved", churn: 412 });
+  });
+
+  it("reports repo-mismatch for an enterprise remote against a github.com PR url", async () => {
+    const result = await resolveEnrichment({
+      task: "refactor PR 9",
+      run: scripted({
+        "git rev-parse": toplevel,
+        "git remote": { ok: true, stdout: "git@github.example.com:owner/repo.git\n" },
+        "gh pr": { ok: true, stdout: prPayload() },
+      }),
+      env: {},
+    });
+    expect(result).toEqual({ status: "unresolved", reason: "repo-mismatch" });
+  });
+
+  it("reports timed-out when the first call exceeds its timeout", async () => {
+    const result = await resolveEnrichment({
+      task: "refactor PR 9",
+      run: scripted({ "git rev-parse": { ok: false, code: null, timedOut: true } }),
+      env: {},
+    });
+    expect(result).toEqual({ status: "unresolved", reason: "timed-out" });
+  });
+
+  it("stops spawning once the total budget is spent", async () => {
+    const inspect = vi.fn();
+    let clock = 0;
+    const result = await resolveEnrichment({
+      task: "refactor PR 9",
+      run: scripted(happy(), (input) => {
+        inspect(input);
+        clock += 2_000;
+      }),
+      env: {},
+      now: () => clock,
+    });
+    expect(result).toEqual({ status: "unresolved", reason: "timed-out" });
+    const calls = inspect.mock.calls.map(([input]) => input as Input);
+    expect(calls).toHaveLength(2);
+    expect(calls.some((input) => input.command === "gh")).toBe(false);
+  });
+
+  it("clamps each call to whichever of the per-call timeout and the budget is smaller", async () => {
+    const inspect = vi.fn();
+    let clock = 0;
+    await resolveEnrichment({
+      task: "refactor PR 9",
+      run: scripted(happy(), (input) => {
+        inspect(input);
+        clock += 2_500;
+      }),
+      env: {},
+      now: () => clock,
+    });
+    const calls = inspect.mock.calls.map(([input]) => input as Input);
+    expect(calls[0]!.timeoutMs).toBe(2_000);
+    expect(calls[1]!.timeoutMs).toBe(500);
+  });
+
   it("reports empty-diff for a zero-churn PR", async () => {
     const result = await resolveEnrichment({
       task: "refactor PR 9",

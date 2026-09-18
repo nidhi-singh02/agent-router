@@ -1,4 +1,4 @@
-import type { runCommand } from "../collectors/command-runner.js";
+import type { CommandResult, runCommand } from "../collectors/command-runner.js";
 import { detectPrRefs } from "./ref-detector.js";
 
 export type UnresolvedReason =
@@ -26,6 +26,8 @@ export type Resolution =
 
 /** One network hop on an interactive path; the 5s collector timeout is too generous. */
 const RESOLVER_TIMEOUT_MS = 2_000;
+/** Spent across every subprocess in one run, so three sequential calls cannot stack. */
+const RESOLVER_BUDGET_MS = 3_000;
 const RESOLVER_MAX_BYTES = 65_536;
 
 /**
@@ -60,29 +62,48 @@ export async function resolveEnrichment(input: {
   task: string;
   run: typeof runCommand;
   env: NodeJS.Dict<string>;
+  now?: () => number;
 }): Promise<Resolution> {
   const prNumber = detectPrRefs(input.task)[0];
   if (prNumber === undefined) {
     return { status: "skipped" };
   }
 
-  const run = (command: string, args: string[], cwd?: string) =>
-    input.run({
+  const now = input.now ?? Date.now;
+  const deadline = now() + RESOLVER_BUDGET_MS;
+
+  const run = async (
+    command: string,
+    args: string[],
+    cwd?: string,
+  ): Promise<CommandResult | undefined> => {
+    const remaining = deadline - now();
+    if (remaining <= 0) {
+      return undefined;
+    }
+    return input.run({
       command,
       args,
-      timeoutMs: RESOLVER_TIMEOUT_MS,
+      timeoutMs: Math.min(RESOLVER_TIMEOUT_MS, remaining),
       maxBytes: RESOLVER_MAX_BYTES,
       env: resolverEnv(input.env),
       cwd,
     });
+  };
 
   const toplevel = await run("git", ["rev-parse", "--show-toplevel"]);
+  if (!toplevel || toplevel.timedOut) {
+    return { status: "unresolved", reason: "timed-out" };
+  }
   const cwd = toplevel.stdout.trim();
   if (!toplevel.ok || cwd.length === 0) {
     return { status: "unresolved", reason: "not-a-repository" };
   }
 
   const remote = await run("git", ["remote", "get-url", "origin"], cwd);
+  if (!remote) {
+    return { status: "unresolved", reason: "timed-out" };
+  }
   const local = remote.ok ? parseRemote(remote.stdout.trim()) : undefined;
 
   // The PR number is re-emitted from a parsed integer, never the matched substring.
@@ -97,6 +118,9 @@ export async function resolveEnrichment(input: {
     ],
     cwd,
   );
+  if (!view) {
+    return { status: "unresolved", reason: "timed-out" };
+  }
   if (!view.ok) {
     return { status: "unresolved", reason: ghFailure(view.code, view.timedOut) };
   }
@@ -117,18 +141,21 @@ export async function resolveEnrichment(input: {
     churn,
     changedFiles: parsed.changedFiles,
     prNumber,
-    repo: parsed.repo,
+    repo: { owner: parsed.repo.owner, name: parsed.repo.name },
     isCrossRepository: parsed.isCrossRepository,
   };
 }
 
 interface Repo {
+  host: string;
   owner: string;
   name: string;
 }
 
+/** A PR on another host is a different repository even when owner and name coincide. */
 function sameRepo(left: Repo, right: Repo): boolean {
   return (
+    left.host.toLowerCase() === right.host.toLowerCase() &&
     left.owner.toLowerCase() === right.owner.toLowerCase() &&
     left.name.toLowerCase() === right.name.toLowerCase()
   );
@@ -152,9 +179,21 @@ function ghFailure(code: number | null, timedOut: boolean): UnresolvedReason {
   return "github-unavailable";
 }
 
+const HOST = "([A-Za-z0-9.-]{1,253})";
+const OWNER = "([A-Za-z0-9-]{1,39})";
+const NAME = "([A-Za-z0-9._-]{1,100})";
+const NAME_LAZY = "([A-Za-z0-9._-]{1,100}?)";
+
+/** `scheme://[user@]host[:port]/owner/name[.git]`, covering https and ssh remotes. */
+const REMOTE_URL = new RegExp(
+  `^[A-Za-z][A-Za-z0-9+.-]*://(?:[^@/]+@)?${HOST}(?::\\d{1,5})?/${OWNER}/${NAME_LAZY}(?:\\.git)?/?$`,
+);
+/** The scp-like form `[user@]host:owner/name[.git]`, which carries no scheme. */
+const REMOTE_SCP = new RegExp(`^(?:[^@/]+@)?${HOST}:${OWNER}/${NAME_LAZY}(?:\\.git)?/?$`);
+
 function parseRemote(url: string): Repo | undefined {
-  const match = /[/:]([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100}?)(?:\.git)?$/.exec(url);
-  return match ? { owner: match[1]!, name: match[2]! } : undefined;
+  const match = REMOTE_URL.exec(url) ?? REMOTE_SCP.exec(url);
+  return match ? { host: match[1]!, owner: match[2]!, name: match[3]! } : undefined;
 }
 
 interface Payload {
@@ -197,9 +236,9 @@ function finite(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
+const PR_URL = new RegExp(`^https?://${HOST}(?::\\d{1,5})?/${OWNER}/${NAME}/pull/\\d+$`);
+
 function parsePrUrl(url: string): Repo | undefined {
-  const match = /^https?:\/\/[^/]+\/([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100})\/pull\/\d+$/.exec(
-    url,
-  );
-  return match ? { owner: match[1]!, name: match[2]! } : undefined;
+  const match = PR_URL.exec(url);
+  return match ? { host: match[1]!, owner: match[2]!, name: match[3]! } : undefined;
 }
