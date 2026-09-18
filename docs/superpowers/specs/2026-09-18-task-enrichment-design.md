@@ -116,7 +116,6 @@ export type UnresolvedReason =
   | "gh-not-authenticated"
   | "github-unavailable"
   | "timed-out"
-  | "pr-not-found"
   | "repo-mismatch"
   | "empty-diff"
   | "malformed-response";
@@ -314,17 +313,15 @@ parameter injection, not module mocking (`collectors/cursor/cursor-collector.ts:
 | `gh` not authenticated (exit 4)  | `unresolved` | `gh-not-authenticated`        |
 | Any other non-zero exit          | `unresolved` | `github-unavailable`          |
 | Timeout                          | `unresolved` | `timed-out`                   |
-| PR does not exist, or is private | `unresolved` | `pr-not-found`                |
+| PR does not exist, or is private | `unresolved` | `github-unavailable`          |
 | Base repo != local repo          | `unresolved` | `repo-mismatch`               |
 | `changedFiles` 0 or churn 0      | `unresolved` | `empty-diff`                  |
 | Unparseable or non-finite JSON   | `unresolved` | `malformed-response`          |
 | Resolved                         | `resolved`   | —                             |
 
-Rate-limited and 5xx both exit 1 and are indistinguishable without reading stderr, which
-S3 forbids, so they share `github-unavailable`.
-
-Private-but-existing and not-found share `pr-not-found` so the CLI does not disclose
-existence.
+Not-found, private-without-access, rate-limited, network, and 5xx failures all exit 1 and
+are indistinguishable without reading stderr, which S3 forbids, so they share the
+conservative `github-unavailable` reason.
 
 `truncated` is always `false` in this revision: `additions`, `deletions` and
 `changedFiles` are scalars from the API and are never partial. The field is retained

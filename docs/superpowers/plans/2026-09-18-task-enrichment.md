@@ -665,7 +665,7 @@ describe("resolveEnrichment", () => {
       { "git rev-parse": toplevel, "git remote": origin, "gh pr": { ok: false, code: 4 } },
     ],
     [
-      "pr-not-found",
+      "github-unavailable",
       { "git rev-parse": toplevel, "git remote": origin, "gh pr": { ok: false, code: 1 } },
     ],
   ])("reports %s", async (reason, responses) => {
@@ -783,7 +783,6 @@ export type UnresolvedReason =
   | "gh-not-authenticated"
   | "github-unavailable"
   | "timed-out"
-  | "pr-not-found"
   | "repo-mismatch"
   | "empty-diff"
   | "malformed-response";
@@ -919,11 +918,8 @@ function ghFailure(code: number | null, timedOut: boolean): UnresolvedReason {
   if (code === 4) {
     return "gh-not-authenticated";
   }
-  if (code === 1) {
-    // Not found and private-without-access are indistinguishable without reading
-    // stderr, which must not be treated as data. Both report not found.
-    return "pr-not-found";
-  }
+  // `gh` reserves 1 for every non-auth failure. Without consuming untrusted stderr,
+  // not-found cannot be distinguished from rate limits, network errors, or 5xx.
   return "github-unavailable";
 }
 

@@ -23,5 +23,8 @@
   ],
   "typesafe": {
     "apiKeyRef": "keychain:model-router-typesafe"
+  },
+  "enrichment": {
+    "enabled": true
   }
 }

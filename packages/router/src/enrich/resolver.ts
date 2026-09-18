@@ -7,7 +7,6 @@ export type UnresolvedReason =
   | "gh-not-authenticated"
   | "github-unavailable"
   | "timed-out"
-  | "pr-not-found"
   | "repo-mismatch"
   | "empty-diff"
   | "malformed-response";
@@ -190,11 +189,9 @@ function ghFailure(code: number | null, timedOut: boolean): UnresolvedReason {
   if (code === 4) {
     return "gh-not-authenticated";
   }
-  if (code === 1) {
-    // Not found and private-without-access are indistinguishable without reading
-    // stderr, which must not be treated as data. Both report not found.
-    return "pr-not-found";
-  }
+  // `gh` reserves 1 for every non-auth failure, including not-found, rate limits,
+  // network errors, and server errors. Without consuming untrusted stderr there is
+  // no sound way to narrow the reason further.
   return "github-unavailable";
 }
 

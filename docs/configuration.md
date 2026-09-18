@@ -28,6 +28,9 @@ directory: `~/Library/Application Support/model-router` on macOS,
   },
   "typesafe": {
     "apiKeyRef": "keychain:model-router-typesafe"
+  },
+  "enrichment": {
+    "enabled": true
   }
 }
 ```
@@ -40,6 +43,8 @@ one with `security add-generic-password -a "$USER" -s NAME -w`. For `typesafe.ap
 `collectorPreference` lists collector kinds in preference order. `router run` uses only
 `local-session` collectors unless you pass `--usage`, which runs the full chain
 (official-cli/api, local-session, browser).
+`enrichment.enabled` defaults to `true`. Set it to `false` to prevent `router run` from
+resolving pull request size through GitHub; `--no-enrich` disables it for one invocation.
 `MODEL_ROUTER_COORDINATOR_URL` overrides the file URL.
 Coordinator URLs must use HTTPS; HTTP is accepted only for `localhost`, `127.0.0.1`, or
 `[::1]` during local development.

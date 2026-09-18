@@ -129,7 +129,7 @@ describe("resolveEnrichment", () => {
       { "git rev-parse": toplevel, "git remote": origin, "gh pr": { ok: false, code: 4 } },
     ],
     [
-      "pr-not-found",
+      "github-unavailable",
       { "git rev-parse": toplevel, "git remote": origin, "gh pr": { ok: false, code: 1 } },
     ],
     [
