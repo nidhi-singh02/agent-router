@@ -289,8 +289,9 @@ parameter injection, not module mocking (`collectors/cursor/cursor-collector.ts:
 ## Limits
 
 - At most one PR ref resolved per run; at most one `gh` call per run.
-- 2s timeout. `COLLECTOR_TIMEOUT_MS` (5s) is for local collectors, not a network hop on
-  an interactive path.
+- 2s per-call timeout and a 3s total budget across every subprocess in one run, so the
+  three sequential calls cannot stack. `COLLECTOR_TIMEOUT_MS` (5s) is for local
+  collectors, not a network hop on an interactive path.
 - 64KB byte cap. The response is a handful of scalars, so the cap is a backstop only.
 - No memoization; each run re-detects from its own task string.
 - Enrichment runs under `--dry-run`: a dry run previews the route, and an unenriched
@@ -337,6 +338,7 @@ enrichment: {
   repo?: string;          // "owner/name", validated per S3
   sizeBucket?: EnrichmentShapes["sizeBucket"];
   fileCountBucket?: EnrichmentShapes["fileCountBucket"];
+  advisoryMultiplier?: number; // recorded for calibration, never applied
 }
 ```
 

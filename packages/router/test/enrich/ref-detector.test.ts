@@ -7,6 +7,13 @@ describe("detectPrRefs", () => {
     expect(detectPrRefs("refactor pr #9")).toEqual([9]);
     expect(detectPrRefs("refactor PR#9")).toEqual([9]);
     expect(detectPrRefs("look at pr 1234567")).toEqual([1234567]);
+    // The plural prefixes only the first number; a bare `10` is not a reference.
+    expect(detectPrRefs("compare PRs 9, 10")).toEqual([9]);
+    expect(detectPrRefs("compare PRs 9 and PR 10")).toEqual([9, 10]);
+  });
+
+  it("accepts a leading zero", () => {
+    expect(detectPrRefs("PR 09")).toEqual([9]);
   });
 
   it("ignores a bare issue reference", () => {

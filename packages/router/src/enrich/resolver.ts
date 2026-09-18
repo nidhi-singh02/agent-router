@@ -92,7 +92,10 @@ export async function resolveEnrichment(input: {
       });
     } catch {
       // The runner is an injected seam, so this module owns its own no-throw guarantee
-      // rather than borrowing it from the collaborator.
+      // rather than borrowing it from the collaborator. A thrown runner (a spawn that
+      // never started, say) is reported as `timed-out` along with the genuine timeouts:
+      // both mean "no usable answer within the budget", and a separate reason would
+      // widen the closed union the failure matrix enumerates.
       return undefined;
     }
   };

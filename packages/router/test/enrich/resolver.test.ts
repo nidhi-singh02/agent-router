@@ -304,6 +304,15 @@ describe("resolveEnrichment", () => {
     expect(result).toEqual({ status: "unresolved", reason: "empty-diff" });
   });
 
+  it("reports empty-diff for a PR whose churn is non-zero but touches no files", async () => {
+    const result = await resolveEnrichment({
+      task: "refactor PR 9",
+      run: scripted(happy({ changedFiles: 0 })),
+      env: {},
+    });
+    expect(result).toEqual({ status: "unresolved", reason: "empty-diff" });
+  });
+
   it("reports malformed-response for unusable payloads", async () => {
     const payloads = [
       "{not json",
@@ -347,7 +356,7 @@ describe("resolveEnrichment", () => {
         }),
         env: {},
       });
-      expect(result.status).toBe("unresolved");
+      expect(result).toEqual({ status: "unresolved", reason: "malformed-response" });
     }
   });
 });
