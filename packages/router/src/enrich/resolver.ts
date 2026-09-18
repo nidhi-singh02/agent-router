@@ -81,14 +81,20 @@ export async function resolveEnrichment(input: {
     if (remaining <= 0) {
       return undefined;
     }
-    return input.run({
-      command,
-      args,
-      timeoutMs: Math.min(RESOLVER_TIMEOUT_MS, remaining),
-      maxBytes: RESOLVER_MAX_BYTES,
-      env: resolverEnv(input.env),
-      cwd,
-    });
+    try {
+      return await input.run({
+        command,
+        args,
+        timeoutMs: Math.min(RESOLVER_TIMEOUT_MS, remaining),
+        maxBytes: RESOLVER_MAX_BYTES,
+        env: resolverEnv(input.env),
+        cwd,
+      });
+    } catch {
+      // The runner is an injected seam, so this module owns its own no-throw guarantee
+      // rather than borrowing it from the collaborator.
+      return undefined;
+    }
   };
 
   const toplevel = await run("git", ["rev-parse", "--show-toplevel"]);
@@ -105,8 +111,15 @@ export async function resolveEnrichment(input: {
     return { status: "unresolved", reason: "timed-out" };
   }
   // A lookup that ran and failed is the "no origin configured" path, where skipping the
-  // comparison is sound. A timeout says nothing about the remote, so it must not.
-  const local = remote.ok ? parseRemote(remote.stdout.trim()) : undefined;
+  // comparison is sound. A timeout, or a remote that is present but unreadable, says
+  // nothing about the repository, so neither may skip it.
+  let local: Repo | undefined;
+  if (remote.ok) {
+    local = parseRemote(remote.stdout.trim());
+    if (!local) {
+      return { status: "unresolved", reason: "repo-mismatch" };
+    }
+  }
 
   // The PR number is re-emitted from a parsed integer, never the matched substring.
   const view = await run(

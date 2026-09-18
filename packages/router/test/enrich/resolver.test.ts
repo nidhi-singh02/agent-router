@@ -78,9 +78,13 @@ describe("resolveEnrichment", () => {
     await resolveEnrichment({
       task: "refactor PR 9 --output=/tmp/x",
       run: scripted(happy(), inspect),
-      env: {},
+      env: { PATH: "/bin", GH_TOKEN: "t", GH_REPO: "attacker/repo" },
     });
     const calls = inspect.mock.calls.map(([input]) => input as Input);
+    expect(calls).toHaveLength(3);
+    for (const call of calls) {
+      expect(call.env).toEqual({ PATH: "/bin", GH_TOKEN: "t" });
+    }
     const ghCall = calls.find((input) => input.command === "gh")!;
     expect(ghCall.args).toEqual([
       "pr",
@@ -127,6 +131,10 @@ describe("resolveEnrichment", () => {
     [
       "pr-not-found",
       { "git rev-parse": toplevel, "git remote": origin, "gh pr": { ok: false, code: 1 } },
+    ],
+    [
+      "github-unavailable",
+      { "git rev-parse": toplevel, "git remote": origin, "gh pr": { ok: false, code: 2 } },
     ],
   ])("reports %s", async (reason, responses) => {
     const result = await resolveEnrichment({
@@ -225,6 +233,31 @@ describe("resolveEnrichment", () => {
       env: {},
     });
     expect(result).toMatchObject({ status: "resolved", churn: 412, changedFiles: 9 });
+  });
+
+  it("reports repo-mismatch when the origin remote does not parse", async () => {
+    const result = await resolveEnrichment({
+      task: "refactor PR 9",
+      run: scripted({
+        "git rev-parse": toplevel,
+        "git remote": { ok: true, stdout: "a note about the remote\n" },
+        "gh pr": { ok: true, stdout: prPayload() },
+      }),
+      env: {},
+    });
+    expect(result).toEqual({ status: "unresolved", reason: "repo-mismatch" });
+  });
+
+  it("reports timed-out rather than rejecting when the runner throws", async () => {
+    const throwing = (() => {
+      throw new Error("spawn failed");
+    }) as unknown as typeof runCommand;
+    const result = await resolveEnrichment({
+      task: "refactor PR 9",
+      run: throwing,
+      env: {},
+    });
+    expect(result).toEqual({ status: "unresolved", reason: "timed-out" });
   });
 
   it("stops spawning once the total budget is spent", async () => {
