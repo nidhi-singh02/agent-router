@@ -204,5 +204,6 @@ export async function createDefaultRunDeps(
     env: sanitizeRuntimeEnv(env),
     herdr,
     activityClient: overrides.activityClient ?? defaultActivityClient(env, overrides.fetchImpl),
+    runCommand: overrides.runCommand,
   };
 }

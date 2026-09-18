@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { runCommand } from "../collectors/command-runner.js";
 import { redactCollectorText } from "../collectors/normalizer.js";
 import { RouterSessionSchema } from "../domain/session.js";
 import type { SessionRepository } from "../store/session-repository.js";
@@ -37,6 +38,8 @@ export interface RunDeps {
   sessions?: Pick<SessionRepository, "save" | "get">;
   /** Where the TypeSafe key was looked for, when none was found. */
   typesafeKeyHint?: string;
+  /** Subprocess runner, injected for tests. */
+  runCommand?: typeof runCommand;
 }
 
 export async function executeRun(

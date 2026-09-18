@@ -19,7 +19,14 @@ function runner(
     inspect?.(input);
     expect(input.maxBytes).toBeLessThanOrEqual(65_536);
     expect(input.timeoutMs).toBeLessThanOrEqual(8_000);
-    return { ok: true, stdout, stderr: "", executedReturnedOutput: false as const };
+    return {
+      ok: true,
+      stdout,
+      stderr: "",
+      code: 0,
+      timedOut: false,
+      executedReturnedOutput: false as const,
+    };
   };
 }
 

@@ -4,6 +4,8 @@ export interface CommandResult {
   ok: boolean;
   stdout: string;
   stderr: string;
+  code: number | null;
+  timedOut: boolean;
   executedReturnedOutput: false;
 }
 
@@ -13,16 +15,19 @@ export async function runCommand(input: {
   timeoutMs: number;
   maxBytes: number;
   env?: NodeJS.ProcessEnv;
+  cwd?: string;
 }): Promise<CommandResult> {
   return new Promise((resolve) => {
     const child = spawn(input.command, input.args, {
       env: input.env ?? process.env,
+      cwd: input.cwd,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
     let stderr = "";
     let settled = false;
-    const finish = (ok: boolean) => {
+    let timedOut = false;
+    const finish = (ok: boolean, code: number | null) => {
       if (settled) {
         return;
       }
@@ -31,12 +36,15 @@ export async function runCommand(input: {
         ok,
         stdout: stdout.slice(0, input.maxBytes),
         stderr: stderr.slice(0, input.maxBytes),
+        code,
+        timedOut,
         executedReturnedOutput: false,
       });
     };
     const timer = setTimeout(() => {
+      timedOut = true;
       child.kill("SIGKILL");
-      finish(false);
+      finish(false, null);
     }, input.timeoutMs);
     child.stdout.on("data", (chunk: Buffer) => {
       if (stdout.length < input.maxBytes) {
@@ -50,11 +58,11 @@ export async function runCommand(input: {
     });
     child.on("error", () => {
       clearTimeout(timer);
-      finish(false);
+      finish(false, null);
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      finish(code === 0);
+      finish(code === 0, code);
     });
   });
 }
