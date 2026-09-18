@@ -7,6 +7,7 @@ export type UnresolvedReason =
   | "gh-not-authenticated"
   | "github-unavailable"
   | "timed-out"
+  | "origin-unavailable"
   | "repo-mismatch"
   | "empty-diff"
   | "malformed-response";
@@ -113,15 +114,15 @@ export async function resolveEnrichment(input: {
   if (!remote || remote.timedOut) {
     return { status: "unresolved", reason: "timed-out" };
   }
-  // A lookup that ran and failed is the "no origin configured" path, where skipping the
-  // comparison is sound. A timeout, or a remote that is present but unreadable, says
-  // nothing about the repository, so neither may skip it.
-  let local: Repo | undefined;
-  if (remote.ok) {
-    local = parseRemote(remote.stdout.trim());
-    if (!local) {
-      return { status: "unresolved", reason: "repo-mismatch" };
-    }
+  if (!remote.ok) {
+    // `gh` can silently select another configured remote when `origin` is absent.
+    // Without a canonical local identity, accepting that response could enrich a PR
+    // from a different repository and disclose its size bucket to TypeSafe.
+    return { status: "unresolved", reason: "origin-unavailable" };
+  }
+  const local = parseRemote(remote.stdout.trim());
+  if (!local) {
+    return { status: "unresolved", reason: "repo-mismatch" };
   }
 
   // The PR number is re-emitted from a parsed integer, never the matched substring.
@@ -147,7 +148,7 @@ export async function resolveEnrichment(input: {
   if (!parsed) {
     return { status: "unresolved", reason: "malformed-response" };
   }
-  if (local && !sameRepo(local, parsed.repo)) {
+  if (!sameRepo(local, parsed.repo)) {
     return { status: "unresolved", reason: "repo-mismatch" };
   }
   const churn = parsed.additions + parsed.deletions;

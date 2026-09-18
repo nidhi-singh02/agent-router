@@ -222,17 +222,26 @@ describe("resolveEnrichment", () => {
     expect(calls.some((input) => input.command === "gh")).toBe(false);
   });
 
-  it("resolves with the comparison skipped when the repository has no origin", async () => {
+  it("fails closed without origin even when gh could select another remote", async () => {
+    const inspect = vi.fn();
     const result = await resolveEnrichment({
       task: "refactor PR 9",
-      run: scripted({
-        "git rev-parse": toplevel,
-        "git remote": { ok: false, code: 2 },
-        "gh pr": { ok: true, stdout: prPayload({ url: "https://github.com/other/repo/pull/9" }) },
-      }),
+      run: scripted(
+        {
+          "git rev-parse": toplevel,
+          "git remote": { ok: false, code: 2 },
+          "gh pr": {
+            ok: true,
+            stdout: prPayload({ url: "https://github.com/other/repo/pull/9" }),
+          },
+        },
+        inspect,
+      ),
       env: {},
     });
-    expect(result).toMatchObject({ status: "resolved", churn: 412, changedFiles: 9 });
+    expect(result).toEqual({ status: "unresolved", reason: "origin-unavailable" });
+    const calls = inspect.mock.calls.map(([input]) => input as Input);
+    expect(calls.some((input) => input.command === "gh")).toBe(false);
   });
 
   it("reports repo-mismatch when the origin remote does not parse", async () => {

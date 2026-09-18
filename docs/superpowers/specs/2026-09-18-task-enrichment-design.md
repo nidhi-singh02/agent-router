@@ -116,6 +116,7 @@ export type UnresolvedReason =
   | "gh-not-authenticated"
   | "github-unavailable"
   | "timed-out"
+  | "origin-unavailable"
   | "repo-mismatch"
   | "empty-diff"
   | "malformed-response";
@@ -196,8 +197,9 @@ There is no `baseRepository` field. The base repository is parsed from `url`
   local repository's remote, so the comparison confirms rather than discovers.
 - The base repo parsed from the PR's `url` must equal it, case-insensitively.
   Mismatch -> `repo-mismatch`, and the resolution is discarded.
-- If `origin` is absent, the comparison is skipped: `gh` resolved the PR from some
-  remote of this repository.
+- If `origin` is absent, fail closed with `origin-unavailable` before calling `gh`.
+  Otherwise `gh` can silently select another configured remote, and its PR may belong
+  to a different repository.
 - A non-`github.com` host in `url` is permitted only if it matches the host `gh`
   resolved for the local repo; otherwise `repo-mismatch`.
 - `isCrossRepository` is recorded for the follow-up handoff spec. It has no effect here.
@@ -313,6 +315,7 @@ parameter injection, not module mocking (`collectors/cursor/cursor-collector.ts:
 | `gh` not authenticated (exit 4)  | `unresolved` | `gh-not-authenticated`        |
 | Any other non-zero exit          | `unresolved` | `github-unavailable`          |
 | Timeout                          | `unresolved` | `timed-out`                   |
+| `origin` absent                  | `unresolved` | `origin-unavailable`          |
 | PR does not exist, or is private | `unresolved` | `github-unavailable`          |
 | Base repo != local repo          | `unresolved` | `repo-mismatch`               |
 | `changedFiles` 0 or churn 0      | `unresolved` | `empty-diff`                  |
@@ -376,7 +379,8 @@ through `RunDeps.runCommand`. No network, no mocking.
 - Buckets: boundary values 9/10, 49/50, 249/250, 999/1000; churn 0 -> `empty-diff`.
 - Non-finite: a response with `additions: null` or a non-numeric value yields
   `malformed-response` and never throws.
-- Repo identity: base/local mismatch yields `repo-mismatch` and discards the result.
+- Repo identity: absent `origin` yields `origin-unavailable`; base/local mismatch yields
+  `repo-mismatch`. Both discard the result.
 - Egress: walk the entire recorded `state` on all three `systemOne` calls, skipping
   `task` **by key path** rather than by value shape, and fail on any other string
   containing `/` or matching a file-extension pattern. Scoping this to the enrichment

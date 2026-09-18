@@ -783,6 +783,7 @@ export type UnresolvedReason =
   | "gh-not-authenticated"
   | "github-unavailable"
   | "timed-out"
+  | "origin-unavailable"
   | "repo-mismatch"
   | "empty-diff"
   | "malformed-response";
@@ -857,7 +858,13 @@ export async function resolveEnrichment(input: {
   }
 
   const remote = await run("git", ["remote", "get-url", "origin"], cwd);
-  const local = remote.ok ? parseRemote(remote.stdout.trim()) : undefined;
+  if (!remote.ok) {
+    return { status: "unresolved", reason: "origin-unavailable" };
+  }
+  const local = parseRemote(remote.stdout.trim());
+  if (!local) {
+    return { status: "unresolved", reason: "repo-mismatch" };
+  }
 
   // The PR number is re-emitted from a parsed integer, never the matched substring.
   const view = await run(
@@ -879,7 +886,7 @@ export async function resolveEnrichment(input: {
   if (!parsed) {
     return { status: "unresolved", reason: "malformed-response" };
   }
-  if (local && !sameRepo(local, parsed.repo)) {
+  if (!sameRepo(local, parsed.repo)) {
     return { status: "unresolved", reason: "repo-mismatch" };
   }
   const churn = parsed.additions + parsed.deletions;
