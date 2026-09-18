@@ -191,9 +191,14 @@ There is no `baseRepository` field. The base repository is parsed from `url`
 
 - `git rev-parse --show-toplevel` must succeed. Its result is passed as an explicit
   `cwd` to every subprocess. Failure -> `not-a-repository`.
-- `gh repo view --json nameWithOwner` in that `cwd` gives the local repository.
+- `git remote get-url origin` in that `cwd` gives the local repository, parsed from the
+  remote URL. This is a local command: `gh repo view` would be a second network call,
+  contradicting the one-call limit below, and `gh pr view` already resolves against the
+  local repository's remote, so the comparison confirms rather than discovers.
 - The base repo parsed from the PR's `url` must equal it, case-insensitively.
   Mismatch -> `repo-mismatch`, and the resolution is discarded.
+- If `origin` is absent, the comparison is skipped: `gh` resolved the PR from some
+  remote of this repository.
 - A non-`github.com` host in `url` is permitted only if it matches the host `gh`
   resolved for the local repo; otherwise `repo-mismatch`.
 - `isCrossRepository` is recorded for the follow-up handoff spec. It has no effect here.
