@@ -28,6 +28,11 @@ describe("detectPrRefs", () => {
     expect(detectPrRefs("PRE 9")).toEqual([]);
   });
 
+  it("requires a separator between PR and the number", () => {
+    expect(detectPrRefs("PR9")).toEqual([]);
+    expect(detectPrRefs("PR9000 spec")).toEqual([]);
+  });
+
   it("returns an empty array for text with no reference", () => {
     expect(detectPrRefs("add a dark mode toggle")).toEqual([]);
   });
