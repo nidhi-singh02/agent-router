@@ -205,5 +205,6 @@ export async function createDefaultRunDeps(
     herdr,
     activityClient: overrides.activityClient ?? defaultActivityClient(env, overrides.fetchImpl),
     runCommand: overrides.runCommand,
+    enrichmentEnabled: config.enrichment?.enabled ?? true,
   };
 }

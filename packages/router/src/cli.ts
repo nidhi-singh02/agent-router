@@ -72,17 +72,28 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
     .option("--json", "Emit JSON for plugins", false)
     .option("--session <id>", "Route the next phase of an earlier router session")
     .option("--usage", "Also run official CLI/API and browser quota collectors (slower)", false)
+    .option("--no-enrich", "Skip pull request size resolution")
     .action(
       async (
         task: string,
-        flags: { dryRun?: boolean; json?: boolean; usage?: boolean; session?: string },
+        flags: {
+          dryRun?: boolean;
+          json?: boolean;
+          usage?: boolean;
+          session?: string;
+          enrich?: boolean;
+        },
       ) => {
         try {
           const result = await (options.run ?? executeRun)(
             task,
             flags.session
-              ? { dryRun: Boolean(flags.dryRun), previousSessionId: flags.session }
-              : { dryRun: Boolean(flags.dryRun) },
+              ? {
+                  dryRun: Boolean(flags.dryRun),
+                  previousSessionId: flags.session,
+                  noEnrich: flags.enrich === false,
+                }
+              : { dryRun: Boolean(flags.dryRun), noEnrich: flags.enrich === false },
             options.runDeps ??
               (await (options.createRunDeps ?? createDefaultRunDeps)(env, {
                 usageMode: flags.usage ? "full" : "local",

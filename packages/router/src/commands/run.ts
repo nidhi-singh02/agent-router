@@ -42,11 +42,13 @@ export interface RunDeps {
   typesafeKeyHint?: string;
   /** Subprocess runner, injected for tests. */
   runCommand?: typeof runCommand;
+  /** Persistent config switch; either this or `options.noEnrich` disables enrichment. */
+  enrichmentEnabled?: boolean;
 }
 
 export async function executeRun(
   task: string,
-  options: { dryRun: boolean; previousSessionId?: string },
+  options: { dryRun: boolean; previousSessionId?: string; noEnrich?: boolean },
   deps: RunDeps,
 ): Promise<{ output: string; json: unknown; code: number }> {
   const now = deps.now ?? new Date();
@@ -57,11 +59,14 @@ export async function executeRun(
     const output = `Session not found: ${options.previousSessionId}`;
     return { code: 2, output, json: { ok: false, error: output } };
   }
-  const resolution = await resolveEnrichment({
-    task,
-    run: deps.runCommand ?? defaultRunCommand,
-    env: deps.env,
-  });
+  const enrichmentOff = options.noEnrich === true || deps.enrichmentEnabled === false;
+  const resolution: Resolution = enrichmentOff
+    ? { status: "skipped" }
+    : await resolveEnrichment({
+        task,
+        run: deps.runCommand ?? defaultRunCommand,
+        env: deps.env,
+      });
   const enrichment =
     resolution.status === "resolved"
       ? toShapes({ churn: resolution.churn, changedFiles: resolution.changedFiles })
