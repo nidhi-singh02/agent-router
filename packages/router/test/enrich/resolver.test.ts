@@ -244,7 +244,7 @@ describe("resolveEnrichment", () => {
     expect(calls.some((input) => input.command === "gh")).toBe(false);
   });
 
-  it("reports repo-mismatch when the origin remote does not parse", async () => {
+  it("reports origin-unparseable, not repo-mismatch, when the origin remote does not parse", async () => {
     const result = await resolveEnrichment({
       task: "refactor PR 9",
       run: scripted({
@@ -254,7 +254,7 @@ describe("resolveEnrichment", () => {
       }),
       env: {},
     });
-    expect(result).toEqual({ status: "unresolved", reason: "repo-mismatch" });
+    expect(result).toEqual({ status: "unresolved", reason: "origin-unparseable" });
   });
 
   it("reports timed-out rather than rejecting when the runner throws", async () => {

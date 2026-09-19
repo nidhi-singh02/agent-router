@@ -8,6 +8,7 @@ export type UnresolvedReason =
   | "github-unavailable"
   | "timed-out"
   | "origin-unavailable"
+  | "origin-unparseable"
   | "repo-mismatch"
   | "empty-diff"
   | "malformed-response";
@@ -19,6 +20,12 @@ export type Resolution =
       changedFiles: number;
       prNumber: number;
       repo: { owner: string; name: string };
+      /**
+       * Recorded for the deferred handoff spec, which gates on it rather than adding
+       * another `gh` field later. Deliberately unread here: it reaches no consumer, no
+       * decision, no rendered output and no TypeSafe state. See the design spec,
+       * "Resolution" and Deferred.
+       */
       isCrossRepository: boolean;
     }
   | { status: "skipped" }
@@ -122,7 +129,9 @@ export async function resolveEnrichment(input: {
   }
   const local = parseRemote(remote.stdout.trim());
   if (!local) {
-    return { status: "unresolved", reason: "repo-mismatch" };
+    // Distinct from `repo-mismatch`: nothing was compared. `origin` exists but is not a
+    // URL this module recognizes, so there is no local identity to check the PR against.
+    return { status: "unresolved", reason: "origin-unparseable" };
   }
 
   // The PR number is re-emitted from a parsed integer, never the matched substring.

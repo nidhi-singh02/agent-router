@@ -117,6 +117,7 @@ export type UnresolvedReason =
   | "github-unavailable"
   | "timed-out"
   | "origin-unavailable"
+  | "origin-unparseable"
   | "repo-mismatch"
   | "empty-diff"
   | "malformed-response";
@@ -202,7 +203,9 @@ There is no `baseRepository` field. The base repository is parsed from `url`
   to a different repository.
 - A non-`github.com` host in `url` is permitted only if it matches the host `gh`
   resolved for the local repo; otherwise `repo-mismatch`.
-- `isCrossRepository` is recorded for the follow-up handoff spec. It has no effect here.
+- `isCrossRepository` is recorded for the follow-up handoff spec. It has no effect here:
+  no consumer reads it, and it reaches no decision, no rendered output and no TypeSafe
+  state. The field carries that note at its declaration so it is not read as a control.
 
 ### Subprocess environment
 
@@ -316,6 +319,7 @@ parameter injection, not module mocking (`collectors/cursor/cursor-collector.ts:
 | Any other non-zero exit          | `unresolved` | `github-unavailable`          |
 | Timeout                          | `unresolved` | `timed-out`                   |
 | `origin` absent                  | `unresolved` | `origin-unavailable`          |
+| `origin` not a parseable URL     | `unresolved` | `origin-unparseable`          |
 | PR does not exist, or is private | `unresolved` | `github-unavailable`          |
 | Base repo != local repo          | `unresolved` | `repo-mismatch`               |
 | `changedFiles` 0 or churn 0      | `unresolved` | `empty-diff`                  |

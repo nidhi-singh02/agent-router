@@ -4,7 +4,8 @@ const MAX_PR_NUMBER = 9_999_999;
 /**
  * Detects explicit pull request references in a task string.
  *
- * Only the explicit forms are accepted (`PR 9`, `pr #9`, `PR#9`, `PRs 9, 10`). A bare `#9` is the
+ * Only the explicit forms are accepted (`PR 9`, `pr #9`, `PR#9`, `PRs 9`). Every number
+ * needs its own `PR` prefix, so `PRs 9, 10` yields `9` alone. A bare `#9` is the
  * canonical issue reference, and matching it would fire an authenticated network
  * request on a prompt pasted from a chat message or an issue body.
  */
