@@ -23,6 +23,7 @@ import { SessionRepository } from "../store/session-repository.js";
 import { UsageRepository } from "../store/usage-repository.js";
 import { ReservationRepository } from "../store/reservation-repository.js";
 import { ReservationService } from "../reservations/reservation-service.js";
+import { resolverEnv } from "../enrich/resolver.js";
 
 function unavailableTypeSafe(): TypeSafePort {
   return {
@@ -202,7 +203,10 @@ export async function createDefaultRunDeps(
     usage,
     client,
     env: sanitizeRuntimeEnv(env),
+    enrichEnv: resolverEnv(env),
     herdr,
     activityClient: overrides.activityClient ?? defaultActivityClient(env, overrides.fetchImpl),
+    runCommand: overrides.runCommand,
+    enrichmentEnabled: config.enrichment?.enabled ?? true,
   };
 }

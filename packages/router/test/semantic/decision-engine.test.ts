@@ -381,6 +381,17 @@ describe("decision engine", () => {
     });
     expect(client.calls.some((call) => "route" in call.questions)).toBe(true);
   });
+
+  it("returns unsafe-state instead of throwing when the task contains a credential shape", async () => {
+    const client = fakeTypeSafe({});
+    const result = await decideRoute({
+      task: "refactor using key AKIAIOSFODNN7EXAMPLE now",
+      candidates: [grokCandidate],
+      userRequestedUltra: false,
+      client,
+    });
+    expect(result.status).toBe("unsafe-state");
+  });
 });
 
 describe("evaluation fixtures", () => {

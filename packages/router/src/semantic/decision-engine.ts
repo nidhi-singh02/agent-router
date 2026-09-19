@@ -1,6 +1,7 @@
 import type { ChoiceResponse, SystemOneRequest } from "@typesafe-ai/sdk";
 import type { ReasoningEffort } from "../domain/model-profile.js";
 import type { WorkflowPhase } from "../domain/session.js";
+import type { EnrichmentShapes } from "../enrich/buckets.js";
 import type { SemanticCandidate } from "./candidate.js";
 import { cacheValueQuestion } from "./cache-assessor.js";
 import { effortQuestion } from "./effort-selector.js";
@@ -24,6 +25,8 @@ export interface DecideRouteInput {
     phase: WorkflowPhase;
     effort: ReasoningEffort;
   };
+  /** Bucketed task size. Never carries a path; see enrich/buckets.ts. */
+  enrichment?: EnrichmentShapes;
 }
 
 export type RouteDecisionResult =
@@ -45,6 +48,7 @@ export type RouteDecisionResult =
     }
   | { status: "invalid-choice" }
   | { status: "no-candidates" }
+  | { status: "unsafe-state" }
   | { status: "typesafe-unavailable"; fallback?: ReturnType<typeof deterministicFallback> };
 
 export function applyConfidencePolicy(input: {
@@ -70,8 +74,16 @@ export async function decideRoute(input: DecideRouteInput): Promise<RouteDecisio
     return { status: "no-candidates" };
   }
   const eligibleIds = input.candidates.map((candidate) => candidate.opaqueId);
-  const classificationState = { task: input.task, candidateCount: input.candidates.length };
-  assertSafeState(classificationState);
+  const classificationState = {
+    task: input.task,
+    candidateCount: input.candidates.length,
+    ...(input.enrichment ? { enrichment: input.enrichment } : {}),
+  };
+  try {
+    assertSafeState(classificationState);
+  } catch {
+    return { status: "unsafe-state" };
+  }
 
   let classification;
   try {
@@ -140,7 +152,11 @@ export async function decideRoute(input: DecideRouteInput): Promise<RouteDecisio
       supportedEfforts: [...candidate.supportedEfforts],
     })),
   };
-  assertSafeState(rankingState);
+  try {
+    assertSafeState(rankingState);
+  } catch {
+    return { status: "unsafe-state" };
+  }
 
   let ranking;
   try {
@@ -187,6 +203,7 @@ export async function decideRoute(input: DecideRouteInput): Promise<RouteDecisio
         phase,
         complexity: classification.answers.complexity.score,
         creativity: classification.answers.creativity.score,
+        ...(input.enrichment ? { enrichment: input.enrichment } : {}),
       },
       questions: {
         effort: effortQuestion([...selected.supportedEfforts], input.userRequestedUltra),

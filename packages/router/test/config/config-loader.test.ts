@@ -153,6 +153,18 @@ describe("config loader", () => {
     expect(() => loadConfig({ env: { MODEL_ROUTER_HOME: home } })).toThrow(/https|loopback/i);
   });
 
+  it("reads enrichment.enabled from the config file", () => {
+    const home = tempHome();
+    writeFileSync(
+      path.join(home, "config.json"),
+      JSON.stringify({ accounts: [], enrichment: { enabled: false } }),
+    );
+
+    const config = loadConfig({ env: { MODEL_ROUTER_HOME: home } });
+
+    expect(config.enrichment).toEqual({ enabled: false });
+  });
+
   it("allows plaintext coordinator URLs on loopback", () => {
     for (const url of ["http://localhost:8787", "http://127.0.0.1:8787", "http://[::1]:8787"]) {
       const home = tempHome();

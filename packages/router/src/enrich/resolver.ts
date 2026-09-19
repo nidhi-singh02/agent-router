@@ -1,0 +1,279 @@
+import type { CommandResult, runCommand } from "../collectors/command-runner.js";
+import { detectPrRefs } from "./ref-detector.js";
+
+export type UnresolvedReason =
+  | "not-a-repository"
+  | "gh-not-installed"
+  | "gh-launch-failed"
+  | "gh-not-authenticated"
+  | "github-unavailable"
+  | "timed-out"
+  | "origin-unavailable"
+  | "origin-unparseable"
+  | "repo-mismatch"
+  | "empty-diff"
+  | "malformed-response";
+
+export type Resolution =
+  | {
+      status: "resolved";
+      churn: number;
+      changedFiles: number;
+      prNumber: number;
+      repo: { owner: string; name: string };
+      /**
+       * Recorded for the deferred handoff spec, which gates on it rather than adding
+       * another `gh` field later. Deliberately unread here: it reaches no consumer, no
+       * decision, no rendered output and no TypeSafe state. See the design spec,
+       * "Resolution" and Deferred.
+       */
+      isCrossRepository: boolean;
+    }
+  | { status: "skipped" }
+  | { status: "unresolved"; reason: UnresolvedReason };
+
+/** One network hop on an interactive path; the 5s collector timeout is too generous. */
+const RESOLVER_TIMEOUT_MS = 2_000;
+/** Spent across every subprocess in one run, so three sequential calls cannot stack. */
+const RESOLVER_BUDGET_MS = 3_000;
+const RESOLVER_MAX_BYTES = 65_536;
+
+/**
+ * Variables `gh` reads that redirect the request or the credential are never forwarded.
+ * `GH_REPO` accepts `[HOST/]OWNER/REPO`, the same redirect the `-R` flag provides.
+ * Generic enterprise tokens are also excluded: the repository controls its remote host,
+ * so forwarding one before host validation could disclose it to an attacker-run GHES host.
+ * Enterprise authentication instead uses `gh`'s host-specific credential store.
+ */
+const FORWARDED = [
+  "PATH",
+  "HOME",
+  "XDG_CONFIG_HOME",
+  "GH_TOKEN",
+  "GITHUB_TOKEN",
+  "LANG",
+  "LC_ALL",
+  "TMPDIR",
+] as const;
+
+export function resolverEnv(env: NodeJS.Dict<string>): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const key of FORWARDED) {
+    const value = env[key];
+    if (value) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+export async function resolveEnrichment(input: {
+  task: string;
+  run: typeof runCommand;
+  env: NodeJS.Dict<string>;
+  now?: () => number;
+}): Promise<Resolution> {
+  const prNumber = detectPrRefs(input.task)[0];
+  if (prNumber === undefined) {
+    return { status: "skipped" };
+  }
+
+  const now = input.now ?? Date.now;
+  const deadline = now() + RESOLVER_BUDGET_MS;
+
+  const run = async (
+    command: string,
+    args: string[],
+    cwd?: string,
+  ): Promise<CommandResult | undefined> => {
+    const remaining = deadline - now();
+    if (remaining <= 0) {
+      return undefined;
+    }
+    try {
+      return await input.run({
+        command,
+        args,
+        timeoutMs: Math.min(RESOLVER_TIMEOUT_MS, remaining),
+        maxBytes: RESOLVER_MAX_BYTES,
+        env: resolverEnv(input.env),
+        cwd,
+      });
+    } catch {
+      // The runner is an injected seam, so this module owns its own no-throw guarantee
+      // rather than borrowing it from the collaborator. A thrown runner (a spawn that
+      // never started, say) is reported as `timed-out` along with the genuine timeouts:
+      // both mean "no usable answer within the budget", and a separate reason would
+      // widen the closed union the failure matrix enumerates.
+      return undefined;
+    }
+  };
+
+  const toplevel = await run("git", ["rev-parse", "--show-toplevel"]);
+  if (!toplevel || toplevel.timedOut) {
+    return { status: "unresolved", reason: "timed-out" };
+  }
+  const cwd = toplevel.stdout.trim();
+  if (!toplevel.ok || cwd.length === 0) {
+    return { status: "unresolved", reason: "not-a-repository" };
+  }
+
+  const remote = await run("git", ["remote", "get-url", "origin"], cwd);
+  if (!remote || remote.timedOut) {
+    return { status: "unresolved", reason: "timed-out" };
+  }
+  if (!remote.ok) {
+    // `gh` can silently select another configured remote when `origin` is absent.
+    // Without a canonical local identity, accepting that response could enrich a PR
+    // from a different repository and disclose its size bucket to TypeSafe.
+    return { status: "unresolved", reason: "origin-unavailable" };
+  }
+  const local = parseRemote(remote.stdout.trim());
+  if (!local) {
+    // Distinct from `repo-mismatch`: nothing was compared. `origin` exists but is not a
+    // URL this module recognizes, so there is no local identity to check the PR against.
+    return { status: "unresolved", reason: "origin-unparseable" };
+  }
+
+  // The PR number is re-emitted from a parsed integer, never the matched substring.
+  const view = await run(
+    "gh",
+    [
+      "pr",
+      "view",
+      String(prNumber),
+      "--json",
+      "additions,deletions,changedFiles,url,isCrossRepository",
+    ],
+    cwd,
+  );
+  if (!view) {
+    return { status: "unresolved", reason: "timed-out" };
+  }
+  if (!view.ok) {
+    return { status: "unresolved", reason: ghFailure(view) };
+  }
+
+  const parsed = parsePayload(view.stdout);
+  if (!parsed) {
+    return { status: "unresolved", reason: "malformed-response" };
+  }
+  if (!sameRepo(local, parsed.repo)) {
+    return { status: "unresolved", reason: "repo-mismatch" };
+  }
+  const churn = parsed.additions + parsed.deletions;
+  if (churn === 0 || parsed.changedFiles === 0) {
+    return { status: "unresolved", reason: "empty-diff" };
+  }
+  return {
+    status: "resolved",
+    churn,
+    changedFiles: parsed.changedFiles,
+    prNumber,
+    repo: { owner: parsed.repo.owner, name: parsed.repo.name },
+    isCrossRepository: parsed.isCrossRepository,
+  };
+}
+
+interface Repo {
+  host: string;
+  owner: string;
+  name: string;
+}
+
+/** A PR on another host is a different repository even when owner and name coincide. */
+function sameRepo(left: Repo, right: Repo): boolean {
+  return (
+    left.host.toLowerCase() === right.host.toLowerCase() &&
+    left.owner.toLowerCase() === right.owner.toLowerCase() &&
+    left.name.toLowerCase() === right.name.toLowerCase()
+  );
+}
+
+function ghFailure(result: CommandResult): UnresolvedReason {
+  if (result.timedOut) {
+    return "timed-out";
+  }
+  // Only ENOENT means the binary is absent. Every other spawn failure (EACCES on a
+  // non-executable `gh`, EMFILE under fd exhaustion) was reported as a missing install,
+  // which sends the user to reinstall a binary that is already there.
+  if (result.spawnErrorCode !== undefined) {
+    return result.spawnErrorCode === "ENOENT" ? "gh-not-installed" : "gh-launch-failed";
+  }
+  if (result.code === null) {
+    // Started, then died without an exit code: killed by a signal. No usable answer, and
+    // nothing here distinguishes it from any other failed launch.
+    return "gh-launch-failed";
+  }
+  if (result.code === 4) {
+    return "gh-not-authenticated";
+  }
+  // `gh` reserves 1 for every non-auth failure, including not-found, rate limits,
+  // network errors, and server errors. Without consuming untrusted stderr there is
+  // no sound way to narrow the reason further.
+  return "github-unavailable";
+}
+
+const HOST = "([A-Za-z0-9.-]{1,253})";
+const OWNER = "([A-Za-z0-9-]{1,39})";
+const NAME = "([A-Za-z0-9._-]{1,100})";
+const NAME_LAZY = "([A-Za-z0-9._-]{1,100}?)";
+
+/** `scheme://[user@]host[:port]/owner/name[.git]`, covering https and ssh remotes. */
+const REMOTE_URL = new RegExp(
+  `^[A-Za-z][A-Za-z0-9+.-]*://(?:[^@/]+@)?${HOST}(?::\\d{1,5})?/${OWNER}/${NAME_LAZY}(?:\\.git)?/?$`,
+);
+/** The scp-like form `[user@]host:owner/name[.git]`, which carries no scheme. */
+const REMOTE_SCP = new RegExp(`^(?:[^@/]+@)?${HOST}:${OWNER}/${NAME_LAZY}(?:\\.git)?/?$`);
+
+function parseRemote(url: string): Repo | undefined {
+  const match = REMOTE_URL.exec(url) ?? REMOTE_SCP.exec(url);
+  return match ? { host: match[1]!, owner: match[2]!, name: match[3]! } : undefined;
+}
+
+interface Payload {
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  repo: Repo;
+  isCrossRepository: boolean;
+}
+
+function parsePayload(stdout: string): Payload | undefined {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(stdout);
+  } catch {
+    return undefined;
+  }
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return undefined;
+  }
+  const record = raw as Record<string, unknown>;
+  const additions = finite(record.additions);
+  const deletions = finite(record.deletions);
+  const changedFiles = finite(record.changedFiles);
+  const repo = typeof record.url === "string" ? parsePrUrl(record.url) : undefined;
+  if (additions === undefined || deletions === undefined || changedFiles === undefined || !repo) {
+    return undefined;
+  }
+  return {
+    additions,
+    deletions,
+    changedFiles,
+    repo,
+    isCrossRepository: record.isCrossRepository === true,
+  };
+}
+
+/** `NaN` is a `number` to TypeScript and is rejected by zod, so it must not escape here. */
+function finite(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+const PR_URL = new RegExp(`^https?://${HOST}(?::\\d{1,5})?/${OWNER}/${NAME}/pull/\\d+$`);
+
+function parsePrUrl(url: string): Repo | undefined {
+  const match = PR_URL.exec(url);
+  return match ? { host: match[1]!, owner: match[2]!, name: match[3]! } : undefined;
+}

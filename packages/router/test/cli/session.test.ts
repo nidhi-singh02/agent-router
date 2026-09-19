@@ -271,7 +271,7 @@ describe("phase handoffs between router sessions", () => {
     });
     expect(run).toHaveBeenCalledWith(
       "Implement it",
-      { dryRun: true, previousSessionId: "sess_prev" },
+      { dryRun: true, previousSessionId: "sess_prev", noEnrich: false },
       expect.anything(),
     );
   });

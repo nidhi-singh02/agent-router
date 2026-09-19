@@ -19,6 +19,9 @@ export interface AppConfig {
   typesafe?: {
     apiKeyRef: string;
   };
+  enrichment?: {
+    enabled: boolean;
+  };
 }
 
 export function resolveHome(env: NodeJS.Dict<string> = process.env): string {
@@ -65,6 +68,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
         }
       : file.coordinator,
     typesafe: file.typesafe,
+    enrichment: file.enrichment,
   };
 }
 
