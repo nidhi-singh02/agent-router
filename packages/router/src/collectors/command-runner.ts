@@ -6,6 +6,12 @@ export interface CommandResult {
   stderr: string;
   code: number | null;
   timedOut: boolean;
+  /**
+   * `err.code` from a failed spawn (`ENOENT`, `EACCES`, `EMFILE`, ...), absent when the
+   * child started. Callers cannot tell a missing binary from a local exec failure by exit
+   * code alone: both surface as `code: null`.
+   */
+  spawnErrorCode?: string;
   executedReturnedOutput: false;
 }
 
@@ -27,7 +33,7 @@ export async function runCommand(input: {
     let stderr = "";
     let settled = false;
     let timedOut = false;
-    const finish = (ok: boolean, code: number | null) => {
+    const finish = (ok: boolean, code: number | null, spawnErrorCode?: string) => {
       if (settled) {
         return;
       }
@@ -38,6 +44,7 @@ export async function runCommand(input: {
         stderr: stderr.slice(0, input.maxBytes),
         code,
         timedOut,
+        ...(spawnErrorCode === undefined ? {} : { spawnErrorCode }),
         executedReturnedOutput: false,
       });
     };
@@ -56,9 +63,9 @@ export async function runCommand(input: {
         stderr += chunk.toString("utf8");
       }
     });
-    child.on("error", () => {
+    child.on("error", (error: NodeJS.ErrnoException) => {
       clearTimeout(timer);
-      finish(false, null);
+      finish(false, null, typeof error.code === "string" ? error.code : "UNKNOWN");
     });
     child.on("close", (code) => {
       clearTimeout(timer);

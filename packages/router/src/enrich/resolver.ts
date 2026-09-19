@@ -4,6 +4,7 @@ import { detectPrRefs } from "./ref-detector.js";
 export type UnresolvedReason =
   | "not-a-repository"
   | "gh-not-installed"
+  | "gh-launch-failed"
   | "gh-not-authenticated"
   | "github-unavailable"
   | "timed-out"
@@ -150,7 +151,7 @@ export async function resolveEnrichment(input: {
     return { status: "unresolved", reason: "timed-out" };
   }
   if (!view.ok) {
-    return { status: "unresolved", reason: ghFailure(view.code, view.timedOut) };
+    return { status: "unresolved", reason: ghFailure(view) };
   }
 
   const parsed = parsePayload(view.stdout);
@@ -189,14 +190,22 @@ function sameRepo(left: Repo, right: Repo): boolean {
   );
 }
 
-function ghFailure(code: number | null, timedOut: boolean): UnresolvedReason {
-  if (timedOut) {
+function ghFailure(result: CommandResult): UnresolvedReason {
+  if (result.timedOut) {
     return "timed-out";
   }
-  if (code === null) {
-    return "gh-not-installed";
+  // Only ENOENT means the binary is absent. Every other spawn failure (EACCES on a
+  // non-executable `gh`, EMFILE under fd exhaustion) was reported as a missing install,
+  // which sends the user to reinstall a binary that is already there.
+  if (result.spawnErrorCode !== undefined) {
+    return result.spawnErrorCode === "ENOENT" ? "gh-not-installed" : "gh-launch-failed";
   }
-  if (code === 4) {
+  if (result.code === null) {
+    // Started, then died without an exit code: killed by a signal. No usable answer, and
+    // nothing here distinguishes it from any other failed launch.
+    return "gh-launch-failed";
+  }
+  if (result.code === 4) {
     return "gh-not-authenticated";
   }
   // `gh` reserves 1 for every non-auth failure, including not-found, rate limits,

@@ -5,7 +5,13 @@ import type { runCommand } from "../../src/collectors/command-runner.js";
 type Input = Parameters<typeof runCommand>[0];
 type Scripted = Record<
   string,
-  { ok: boolean; stdout?: string; code?: number | null; timedOut?: boolean }
+  {
+    ok: boolean;
+    stdout?: string;
+    code?: number | null;
+    timedOut?: boolean;
+    spawnErrorCode?: string;
+  }
 >;
 
 function scripted(responses: Scripted, inspect?: (input: Input) => void): typeof runCommand {
@@ -18,6 +24,7 @@ function scripted(responses: Scripted, inspect?: (input: Input) => void): typeof
       stderr: "",
       code: response.code === undefined ? (response.ok ? 0 : 1) : response.code,
       timedOut: response.timedOut ?? false,
+      ...(response.spawnErrorCode === undefined ? {} : { spawnErrorCode: response.spawnErrorCode }),
       executedReturnedOutput: false as const,
     };
   };
@@ -114,6 +121,22 @@ describe("resolveEnrichment", () => {
     ["not-a-repository", { "git rev-parse": { ok: false, code: 128 } }],
     [
       "gh-not-installed",
+      {
+        "git rev-parse": toplevel,
+        "git remote": origin,
+        "gh pr": { ok: false, code: null, spawnErrorCode: "ENOENT" },
+      },
+    ],
+    [
+      "gh-launch-failed",
+      {
+        "git rev-parse": toplevel,
+        "git remote": origin,
+        "gh pr": { ok: false, code: null, spawnErrorCode: "EACCES" },
+      },
+    ],
+    [
+      "gh-launch-failed",
       { "git rev-parse": toplevel, "git remote": origin, "gh pr": { ok: false, code: null } },
     ],
     [

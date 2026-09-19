@@ -113,6 +113,7 @@ export type UnresolvedReason =
   | "no-refs"
   | "not-a-repository"
   | "gh-not-installed"
+  | "gh-launch-failed"
   | "gh-not-authenticated"
   | "github-unavailable"
   | "timed-out"
@@ -315,6 +316,7 @@ parameter injection, not module mocking (`collectors/cursor/cursor-collector.ts:
 | No PR ref in the prompt          | `skipped`    | — (no subprocess, no warning) |
 | `cwd` not a repository           | `unresolved` | `not-a-repository`            |
 | `gh` missing (ENOENT)            | `unresolved` | `gh-not-installed`            |
+| `gh` spawn fails otherwise       | `unresolved` | `gh-launch-failed`            |
 | `gh` not authenticated (exit 4)  | `unresolved` | `gh-not-authenticated`        |
 | Any other non-zero exit          | `unresolved` | `github-unavailable`          |
 | Timeout                          | `unresolved` | `timed-out`                   |
