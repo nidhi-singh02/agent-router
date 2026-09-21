@@ -306,7 +306,7 @@ router run --session <id> "implement the plan in docs/plans/x.md"
 ## Commands
 
 ```sh
-router run "<task>" [--dry-run] [--usage] [--session <id>] [--json]
+router run "<task>" [--dry-run] [--usage] [--no-enrich] [--session <id>] [--json]
 router status [--usage]
 router session [id] [--list] [--limit <n>] [--json]
 router accounts
@@ -314,8 +314,10 @@ router usage refresh [--source local-session|official-cli|browser] [--dry-run]
 ```
 
 `--json` prints machine-readable output for plugins, including `sessionId`, `agentName`, and
-`paneId`. `router usage refresh` defaults to local-session file reads; `--dry-run` prints
-facts and does not persist. Without `--dry-run` it writes snapshots to SQLite.
+`paneId`. When a task names a pull request, `--no-enrich` skips resolving its size through
+GitHub. Set `enrichment.enabled` to `false` in `config.json` to disable that resolution by
+default. `router usage refresh` defaults to local-session file reads; `--dry-run` prints facts
+and does not persist. Without `--dry-run` it writes snapshots to SQLite.
 
 ## Herdr plugin
 

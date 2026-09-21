@@ -2,7 +2,7 @@ import { mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { isEntrypoint, runCli } from "../../src/cli.js";
 
 function capture() {
@@ -62,5 +62,22 @@ describe("cli entrypoint", () => {
     expect(isEntrypoint(metaUrl, link)).toBe(true);
     expect(isEntrypoint(metaUrl, path.join(dir, "other.js"))).toBe(false);
     expect(isEntrypoint(metaUrl, undefined)).toBe(false);
+  });
+
+  it("passes --no-enrich through to executeRun", async () => {
+    const io = capture();
+    const run = vi.fn().mockResolvedValue({ code: 0, output: "", json: {} });
+    await runCli(["node", "router", "run", "refactor PR 9", "--dry-run", "--no-enrich"], {
+      stdout: io.stdout,
+      stderr: io.stderr,
+      env: { MODEL_ROUTER_HOME: tempHome() },
+      run,
+      runDeps: {} as never,
+    });
+    expect(run).toHaveBeenCalledWith(
+      "refactor PR 9",
+      expect.objectContaining({ noEnrich: true }),
+      expect.anything(),
+    );
   });
 });

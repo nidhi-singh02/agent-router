@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { runCommand as defaultRunCommand, type runCommand } from "../collectors/command-runner.js";
 import { redactCollectorText } from "../collectors/normalizer.js";
+import { resolveEnrichment, type Resolution } from "../enrich/resolver.js";
+import { advisoryMultiplier, toShapes, type EnrichmentShapes } from "../enrich/buckets.js";
 import { RouterSessionSchema } from "../domain/session.js";
 import type { SessionRepository } from "../store/session-repository.js";
 import { evaluateEligibility } from "../policy/eligibility.js";
@@ -28,6 +31,8 @@ export interface RunDeps {
   usage: Record<string, UsageSnapshot>;
   client: TypeSafePort;
   env: NodeJS.Dict<string>;
+  /** Parent env for the resolver, which allowlists it again. Never used for launch. */
+  enrichEnv?: NodeJS.Dict<string>;
   now?: Date;
   reservations?: ReservationService;
   herdr?: HerdrClient;
@@ -37,11 +42,15 @@ export interface RunDeps {
   sessions?: Pick<SessionRepository, "save" | "get">;
   /** Where the TypeSafe key was looked for, when none was found. */
   typesafeKeyHint?: string;
+  /** Subprocess runner, injected for tests. */
+  runCommand?: typeof runCommand;
+  /** Persistent config switch; either this or `options.noEnrich` disables enrichment. */
+  enrichmentEnabled?: boolean;
 }
 
 export async function executeRun(
   task: string,
-  options: { dryRun: boolean; previousSessionId?: string },
+  options: { dryRun: boolean; previousSessionId?: string; noEnrich?: boolean },
   deps: RunDeps,
 ): Promise<{ output: string; json: unknown; code: number }> {
   const now = deps.now ?? new Date();
@@ -52,6 +61,18 @@ export async function executeRun(
     const output = `Session not found: ${options.previousSessionId}`;
     return { code: 2, output, json: { ok: false, error: output } };
   }
+  const enrichmentOff = options.noEnrich === true || deps.enrichmentEnabled === false;
+  const resolution: Resolution = enrichmentOff
+    ? { status: "skipped" }
+    : await resolveEnrichment({
+        task,
+        run: deps.runCommand ?? defaultRunCommand,
+        env: deps.enrichEnv ?? deps.env,
+      });
+  const enrichment =
+    resolution.status === "resolved"
+      ? toShapes({ churn: resolution.churn, changedFiles: resolution.changedFiles })
+      : undefined;
   const reservations = deps.reservations ?? new ReservationService();
   const eligible = [];
   const exclusions = [];
@@ -120,6 +141,7 @@ export async function executeRun(
   }
   const decision = await decideRoute({
     task,
+    enrichment,
     userRequestedUltra: /\bultra\b/i.test(task),
     client: deps.client,
     candidates: eligible.map((item) => ({
@@ -138,6 +160,11 @@ export async function executeRun(
         }
       : undefined,
   });
+  if (decision.status === "unsafe-state") {
+    const output =
+      "Task text looks like it contains a credential and was not sent. Remove the secret and retry.";
+    return { code: 2, output, json: { ok: false, status: "unsafe-state" } };
+  }
   if (decision.status === "ask-user") {
     return {
       code: 3,
@@ -281,6 +308,7 @@ export async function executeRun(
   const card = formatDecisionCard({
     selected: `${selected.model.agent} / ${selected.model.launchName} / ${decision.effort}`,
     phase: decision.phase,
+    taskSize: formatTaskSize(resolution),
     why: decision.reason,
     previousSession: previous
       ? `${previous.id} (${previous.phase} -> ${decision.phase})`
@@ -321,8 +349,51 @@ export async function executeRun(
       paneId: launch.paneId,
       agentName: launch.agentName,
       sessionId,
+      enrichment: enrichmentJson(resolution),
     },
   };
+}
+
+function enrichmentJson(resolution: Resolution): Record<string, unknown> {
+  if (resolution.status === "skipped") {
+    return { status: "skipped" };
+  }
+  if (resolution.status === "unresolved") {
+    return { status: "unresolved", reason: resolution.reason };
+  }
+  const shapes = toShapes(resolution);
+  return {
+    status: "resolved",
+    prNumber: resolution.prNumber,
+    repo: `${resolution.repo.owner}/${resolution.repo.name}`,
+    sizeBucket: shapes.sizeBucket,
+    fileCountBucket: shapes.fileCountBucket,
+    advisoryMultiplier: advisoryMultiplier(shapes.sizeBucket),
+  };
+}
+
+const SIZE_LABEL: Record<EnrichmentShapes["sizeBucket"], string> = {
+  trivial: "trivial (1-9 lines)",
+  small: "small (10-49 lines)",
+  medium: "medium (50-249 lines)",
+  large: "large (250-999 lines)",
+  "very-large": "very-large (1000+ lines)",
+};
+
+function formatTaskSize(resolution: Resolution): string | undefined {
+  if (resolution.status === "skipped") {
+    return undefined;
+  }
+  if (resolution.status === "unresolved") {
+    return `unresolved (${resolution.reason})`;
+  }
+  const shapes = toShapes(resolution);
+  // S3's charset check on owner and name is enforced at ingress by `parsePrUrl` in
+  // `enrich/resolver.ts`, whose `PR_URL` regex is the only source of these values, so
+  // there is no resolution that could reach this line with a repo to omit.
+  const { owner, name } = resolution.repo;
+  const files = shapes.fileCountBucket === "1" ? "file" : "files";
+  return `${SIZE_LABEL[shapes.sizeBucket]}, ${shapes.fileCountBucket} ${files} (PR #${resolution.prNumber} in ${owner}/${name})`;
 }
 
 export type { ReasoningEffort };

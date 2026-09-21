@@ -59,6 +59,7 @@ export const ConfigFileSchema = z.object({
       apiKeyRef: CredentialRefSchema,
     })
     .optional(),
+  enrichment: z.object({ enabled: z.boolean().default(true) }).optional(),
 });
 
 export const ModelCatalogSchema = z.object({
