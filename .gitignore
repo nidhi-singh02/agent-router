@@ -9,3 +9,4 @@ coverage/
 *.tgz
 .worktrees/
 .model-router/
+graphify-out/
