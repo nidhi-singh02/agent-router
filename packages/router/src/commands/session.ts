@@ -1,3 +1,4 @@
+import { formatWorkspace } from "../workspaces/git-workspace.js";
 import type { RouterSession } from "../domain/session.js";
 
 function routeLabel(session: RouterSession): string {
@@ -16,6 +17,7 @@ export function formatSession(session: RouterSession): string {
     ...(session.previousSessionId ? [`Previous session: ${session.previousSessionId}`] : []),
     `Route: ${routeLabel(session)}`,
     `Status: ${session.route?.status ?? "none"}`,
+    ...(session.workspace ? [formatWorkspace(session.workspace)] : []),
   ];
   if (session.route?.error) {
     lines.push(`Error: ${session.route.error}`);

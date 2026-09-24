@@ -1,3 +1,10 @@
+import {
+  planWorkspace,
+  createWorkspace,
+  validateWorkspace,
+  formatWorkspace,
+} from "../workspaces/git-workspace.js";
+import type { Workspace } from "../domain/session.js";
 import { randomUUID } from "node:crypto";
 import { runCommand as defaultRunCommand, type runCommand } from "../collectors/command-runner.js";
 import { redactCollectorText } from "../collectors/normalizer.js";
@@ -11,7 +18,7 @@ import { decideRoute } from "../semantic/decision-engine.js";
 import type { TypeSafePort } from "../semantic/typesafe-client.js";
 import { formatDecisionCard } from "../presentation/decision-card.js";
 import { formatPoolQuota } from "../presentation/quota.js";
-import { launchRoutedAgent } from "../launch/herdr-launcher.js";
+import { launchRoutedAgent, type LaunchResult } from "../launch/herdr-launcher.js";
 import type { HerdrClient } from "../launch/herdr-client.js";
 import { buildHandoff, formatHandoffPrompt } from "../handoff/handoff-builder.js";
 import type { Account } from "../domain/account.js";
@@ -26,6 +33,7 @@ import { cacheAffinityKey } from "../sessions/cache-affinity.js";
 import { remainingRatio } from "../policy/quota.js";
 
 export interface RunDeps {
+  cwd?: string;
   accounts: Account[];
   models: ModelProfile[];
   usage: Record<string, UsageSnapshot>;
@@ -50,7 +58,7 @@ export interface RunDeps {
 
 export async function executeRun(
   task: string,
-  options: { dryRun: boolean; previousSessionId?: string; noEnrich?: boolean },
+  options: { dryRun: boolean; previousSessionId?: string; noEnrich?: boolean; worktree?: boolean },
   deps: RunDeps,
 ): Promise<{ output: string; json: unknown; code: number }> {
   const now = deps.now ?? new Date();
@@ -61,12 +69,27 @@ export async function executeRun(
     const output = `Session not found: ${options.previousSessionId}`;
     return { code: 2, output, json: { ok: false, error: output } };
   }
+  let workspace: Workspace | undefined = previous?.workspace;
+  const reuseWorkspace = Boolean(workspace);
+  try {
+    if (workspace) validateWorkspace(workspace);
+    else if (options.worktree) workspace = planWorkspace(deps.cwd ?? process.cwd());
+  } catch (error) {
+    const output = error instanceof Error ? error.message : String(error);
+    return { code: 2, output, json: { ok: false, error: output, workspace } };
+  }
   const enrichmentOff = options.noEnrich === true || deps.enrichmentEnabled === false;
   const resolution: Resolution = enrichmentOff
     ? { status: "skipped" }
     : await resolveEnrichment({
         task,
-        run: deps.runCommand ?? defaultRunCommand,
+        run: workspace
+          ? (input) =>
+              (deps.runCommand ?? defaultRunCommand)({
+                ...input,
+                cwd: input.cwd ?? (reuseWorkspace ? workspace!.path : (deps.cwd ?? process.cwd())),
+              })
+          : (deps.runCommand ?? defaultRunCommand),
         env: deps.enrichEnv ?? deps.env,
       });
   const enrichment =
@@ -212,18 +235,31 @@ export async function executeRun(
         deps.usage[selected.account.id]!.activeReservationRatio -
         selected.account.reserveFloor
       : Number.POSITIVE_INFINITY;
-  const reservation = reservations.tryCreate({
-    accountId: selected.account.id,
-    ratio: selected.estimatedCostRatio,
-    ttlMs: 60_000,
-    maxTotalRatio,
-  });
-  if (!reservation)
+  const isolatedPreview = options.dryRun && Boolean(workspace);
+  const reservation = isolatedPreview
+    ? undefined
+    : reservations.tryCreate({
+        accountId: selected.account.id,
+        ratio: selected.estimatedCostRatio,
+        ttlMs: 60_000,
+        maxTotalRatio,
+      });
+  if (!reservation && !isolatedPreview)
     return {
       code: 2,
       output: "Launch revalidation failed: reservation-conflict",
       json: { ok: false, reason: "reservation-conflict" },
     };
+  if (workspace && !options.dryRun) {
+    try {
+      if (reuseWorkspace) validateWorkspace(workspace);
+      else createWorkspace(deps.cwd ?? process.cwd(), workspace);
+    } catch (error) {
+      if (reservation) reservations.release(reservation.id);
+      const output = `Workspace setup failed: ${error instanceof Error ? error.message : String(error)}\nIntended worktree (any created files are preserved): ${workspace.path}`;
+      return { code: 2, output, json: { ok: false, error: output, workspace } };
+    }
+  }
   const handoff = buildHandoff({
     task,
     constraints: ["Do not deploy or publish anything without asking the user."],
@@ -253,9 +289,16 @@ export async function executeRun(
     dryRun: options.dryRun,
     herdr: deps.herdr,
     existingLaunchToken: deps.existingLaunchToken,
-    existingPaneId: deps.existingPaneId,
+    existingPaneId: workspace ? undefined : deps.existingPaneId,
+    cwd: workspace?.path,
+  }).catch((error: unknown) => {
+    if (!workspace) throw error;
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    } as LaunchResult;
   });
-  if (options.dryRun || !launch.ok) reservations.release(reservation.id);
+  if (reservation && (options.dryRun || !launch.ok)) reservations.release(reservation.id);
   if (sessionId && deps.sessions) {
     const startedAt = new Date().toISOString();
     const affinityInput = {
@@ -269,6 +312,7 @@ export async function executeRun(
     const session = RouterSessionSchema.parse({
       id: sessionId,
       previousSessionId: previous?.id,
+      workspace,
       task: redactCollectorText(task),
       phase: decision.phase,
       route: {
@@ -290,15 +334,17 @@ export async function executeRun(
         agent: selected.model.agent,
         promptPrefixHash: key.slice(key.lastIndexOf(":") + 1),
       },
-      reservations: [
-        {
-          id: reservation.id,
-          accountId: reservation.accountId,
-          ratio: reservation.ratio,
-          createdAt: startedAt,
-          expiresAt: new Date(reservation.expiresAt).toISOString(),
-        },
-      ],
+      reservations: reservation
+        ? [
+            {
+              id: reservation.id,
+              accountId: reservation.accountId,
+              ratio: reservation.ratio,
+              createdAt: startedAt,
+              expiresAt: new Date(reservation.expiresAt).toISOString(),
+            },
+          ]
+        : [],
       handoffs: [handoff],
       paneId: launch.paneId,
       createdAt: startedAt,
@@ -342,9 +388,22 @@ export async function executeRun(
     freshness: snapshot ? `refreshed at ${snapshot.collectedAt}` : undefined,
     reset: snapshot?.windows.find((window) => window.resetsAt)?.resetsAt,
   });
+  const workspaceLines: string[] = [];
+  if (workspace) {
+    if (options.dryRun) {
+      workspaceLines.push(
+        reuseWorkspace
+          ? "Would reuse workspace"
+          : "Would create branch and worktree from committed HEAD",
+      );
+    }
+    workspaceLines.push(formatWorkspace(workspace));
+    if (!launch.ok)
+      workspaceLines.push(`Worktree preserved: ${workspace.path}`, launch.error ?? "launch failed");
+  }
   return {
     code: launch.ok ? 0 : 1,
-    output: `${card}\n${launch.printed ?? launch.error ?? ""}`,
+    output: [card, ...workspaceLines, launch.printed ?? launch.error ?? ""].join("\n"),
     json: {
       ok: launch.ok,
       selected: selected.opaqueId,
@@ -354,6 +413,7 @@ export async function executeRun(
       paneId: launch.paneId,
       agentName: launch.agentName,
       sessionId,
+      ...(workspace ? { workspace, ...(!launch.ok ? { error: launch.error } : {}) } : {}),
       enrichment: enrichmentJson(resolution),
     },
   };
