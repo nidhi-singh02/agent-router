@@ -393,3 +393,52 @@ or provider dashboard exports in issues, tests, or commits.
 ## License
 
 Agent Router is available under the [MIT License](LICENSE).
+
+### Isolated task workspaces (opt-in)
+
+```sh
+router run "Implement the approved plan" --worktree
+router run "Implement the approved plan" --worktree --dry-run
+router session <id> --json
+router run --session <id> "Review the implementation"
+```
+
+`--worktree` requires a committed HEAD and a clean Git source checkout, including
+staged, unstaged, and untracked non-ignored files. The router never stashes or
+copies changes. It creates a unique `router/<uuid>` branch at that HEAD and a
+sibling directory named `<source-checkout>-router-<uuid>` outside the source
+checkout. The source directory's parent must be writable. Task text is never used
+in Git commands or workspace names. Herdr receives the exact directory through
+`pane split --cwd`; no native agent worktree flags are used.
+
+Sessions record `workspace.isolationEnabled`, `path`, `branch`,
+`repositoryIdentity` (the canonical local Git common directory), and
+`startingCommit`. Run output, `router session <id>`, and their JSON output expose
+this metadata. Continuations reuse that exact workspace even from another current
+directory or when routing to a different agent. Uncommitted phase files remain
+available. The router checks the directory, branch, common Git directory, and
+linked-worktree registration before continuing; missing, moved, replaced, or
+mismatched workspaces fail explicitly without falling back to the current directory.
+New commits in the workspace are allowed; the recorded starting commit remains
+provenance, not a requirement to reset the workspace.
+
+An isolated dry-run validates the checkout and previews a unique path, branch, and
+starting commit, but creates no branch, worktree, pane, session, or reservation.
+The generated preview name is not reserved and will differ on the actual run.
+Existing TypeSafe route-selection and enrichment semantics still apply, including
+TypeSafe calls when configured. Unlike the existing non-isolated dry-run, an
+isolated dry-run does not even transiently acquire a quota reservation. Real
+isolated runs use the same account quota and reservation pool as ordinary runs.
+
+Without `--worktree`, new tasks and older sessions without workspace metadata keep
+their existing behavior. Passing `--worktree` on an older session opts that next
+phase into a new workspace based on the current clean checkout. Isolation on an
+already isolated session is always reused, with or without the flag.
+
+If startup fails after creation, the worktree and branch are preserved and their
+path is reported; failed-launch sessions retain the workspace metadata. Inspect
+that directory or retry with the failed session ID. There is no automatic merge,
+cleanup, dependency installation, or crash recovery. Repository identity is local
+and path-based: moving the repository requires manual intervention. Git and Herdr
+must be installed; workspaces contain committed files only, not ignored local
+configuration or installed dependencies.

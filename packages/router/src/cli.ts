@@ -69,6 +69,7 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
     .command("run")
     .argument("<task>")
     .option("--dry-run", "Print the route without launching", false)
+    .option("--worktree", "Create an isolated Git workspace for this task", false)
     .option("--json", "Emit JSON for plugins", false)
     .option("--session <id>", "Route the next phase of an earlier router session")
     .option("--usage", "Also run official CLI/API and browser quota collectors (slower)", false)
@@ -78,6 +79,7 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
         task: string,
         flags: {
           dryRun?: boolean;
+          worktree?: boolean;
           json?: boolean;
           usage?: boolean;
           session?: string;
@@ -91,9 +93,14 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
               ? {
                   dryRun: Boolean(flags.dryRun),
                   previousSessionId: flags.session,
+                  ...(flags.worktree ? { worktree: true } : {}),
                   noEnrich: flags.enrich === false,
                 }
-              : { dryRun: Boolean(flags.dryRun), noEnrich: flags.enrich === false },
+              : {
+                  dryRun: Boolean(flags.dryRun),
+                  noEnrich: flags.enrich === false,
+                  ...(flags.worktree ? { worktree: true } : {}),
+                },
             options.runDeps ??
               (await (options.createRunDeps ?? createDefaultRunDeps)(env, {
                 usageMode: flags.usage ? "full" : "local",

@@ -10,7 +10,7 @@ export interface CommandResult {
 export type RunCommand = (argv: readonly string[]) => Promise<CommandResult>;
 
 export interface HerdrClient {
-  splitCurrent(options?: { direction?: "right" | "down" }): Promise<CommandResult>;
+  splitCurrent(options?: { direction?: "right" | "down"; cwd?: string }): Promise<CommandResult>;
   startAgent(input: {
     name: string;
     kind: "cursor" | "claude" | "codex" | "opencode";
@@ -88,6 +88,7 @@ export function createHerdrClient(runCommand: RunCommand): HerdrClient {
         "--direction",
         options?.direction ?? "right",
         "--no-focus",
+        ...(options?.cwd ? ["--cwd", options.cwd] : []),
       ]);
     },
     startAgent(input) {

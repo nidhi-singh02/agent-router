@@ -55,6 +55,15 @@ export const SessionRouteSchema = z.object({
   error: z.string().min(1).optional(),
 });
 
+export const WorkspaceSchema = z.object({
+  isolationEnabled: z.literal(true),
+  path: z.string().min(1),
+  branch: z.string().min(1),
+  repositoryIdentity: z.string().min(1),
+  startingCommit: z.string().regex(/^[a-f0-9]{40,64}$/),
+});
+export type Workspace = z.infer<typeof WorkspaceSchema>;
+
 export const RouterSessionSchema = z.object({
   id: SessionIdSchema,
   task: z.string().min(1),
@@ -63,6 +72,7 @@ export const RouterSessionSchema = z.object({
   /** The session for the previous workflow phase, set by `router run --session <id>`. */
   previousSessionId: SessionIdSchema.optional(),
   cacheAffinity: CacheAffinitySchema.optional(),
+  workspace: WorkspaceSchema.optional(),
   reservations: z.array(ReservationSchema),
   handoffs: z.array(HandoffSchema),
   paneId: z.string().min(1).optional(),
