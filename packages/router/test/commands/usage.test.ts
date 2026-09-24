@@ -51,6 +51,22 @@ describe("usageRefresh", () => {
     expect(persist).not.toHaveBeenCalled();
   });
 
+  it("reports the most restrictive window, matching routing", async () => {
+    const snapshot = usageFor(personal.id, 0.9, {
+      windows: [
+        { kind: "five-hour", remainingRatio: 0.9, usedRatio: 0.1 },
+        { kind: "weekly", remainingRatio: 0.1, usedRatio: 0.9 },
+      ],
+    });
+    const printed = await usageRefresh({
+      source: "official-cli",
+      dryRun: true,
+      accounts: [personal],
+      collect: async () => snapshot,
+    });
+    expect(printed).toContain("remaining=0.1");
+  });
+
   it("persists snapshots when not dry-run", async () => {
     const persist = vi.fn();
     const snapshot = usageFor(personal.id, 0.8, {

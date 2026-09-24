@@ -1,5 +1,6 @@
 import type { Account } from "../domain/account.js";
 import type { UsageSnapshot } from "../domain/usage.js";
+import { remainingRatio } from "../policy/quota.js";
 
 export async function usageRefresh(input: {
   source: "local-session" | "official-cli" | "browser";
@@ -14,9 +15,8 @@ export async function usageRefresh(input: {
     if (!input.dryRun) {
       input.persist?.(snapshot);
     }
-    const remaining = snapshot.windows.find(
-      (window) => window.remainingRatio !== undefined,
-    )?.remainingRatio;
+    // Same most-restrictive value routing uses, so the report matches eligibility.
+    const remaining = remainingRatio(snapshot);
     lines.push(
       `${account.id} source=${snapshot.source} certainty=${snapshot.certainty} remaining=${remaining ?? "unknown"}`,
     );
