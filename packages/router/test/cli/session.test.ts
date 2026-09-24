@@ -217,6 +217,26 @@ describe("phase handoffs between router sessions", () => {
     db.close();
   });
 
+  it("re-ranks instead of reusing a previous route whose launch failed", async () => {
+    const { db, deps } = runDeps(tempHome(), {});
+    const failed = await executeRun("Implement the billing repository.", { dryRun: false }, deps);
+    expect(failed.code).toBe(1);
+    const failedSession = deps.sessions.latest()!;
+    deps.sessions.save({ ...failedSession, phase: "implementation" });
+    const retry = await executeRun(
+      "Continue implementing the billing repository.",
+      { dryRun: true, previousSessionId: failedSession.id },
+      deps,
+    );
+    expect(retry.code).toBe(0);
+    expect(retry.output).not.toMatch(/reused previous route/);
+    const rankingCalls = (deps.client.calls as { questions: object }[]).filter(
+      (call) => "route" in call.questions,
+    );
+    expect(rankingCalls).toHaveLength(2);
+    db.close();
+  });
+
   it("reuses the previous route when the next task stays in the same phase", async () => {
     const { db, deps } = runDeps(tempHome(), { HERDR_ENV: "1" });
     const first = await executeRun("Implement the billing repository.", { dryRun: false }, deps);

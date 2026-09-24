@@ -152,13 +152,15 @@ export async function executeRun(
       projectedRemainingRatio: item.projectedRemainingRatio,
       capabilities: item.model.capabilities,
     })),
-    previousRoute: previous?.route
-      ? {
-          opaqueId: `${previous.route.accountId}:${previous.route.modelId}`,
-          phase: previous.phase,
-          effort: previous.route.effort,
-        }
-      : undefined,
+    // A route whose launch failed must be re-ranked, never reused as sticky.
+    previousRoute:
+      previous?.route && previous.route.status === "launched"
+        ? {
+            opaqueId: `${previous.route.accountId}:${previous.route.modelId}`,
+            phase: previous.phase,
+            effort: previous.route.effort,
+          }
+        : undefined,
   });
   if (decision.status === "unsafe-state") {
     const output =
