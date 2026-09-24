@@ -289,6 +289,23 @@ describe("router run", () => {
     expect(result.output).toContain("Reserve policy: 40% protected");
   });
 
+  it("shows the configured reserve floor for shared accounts", async () => {
+    const result = await executeRun(
+      "Implement the approved plan.",
+      { dryRun: true },
+      {
+        accounts: [{ ...shared, reserveFloor: 0.6 }],
+        models: [claudeModel],
+        usage: { [shared.id]: usageFor(shared.id, 0.95) },
+        client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
+        env: {},
+        now,
+      },
+    );
+    expect(result.code).toBe(0);
+    expect(result.output).toContain("Reserve policy: 60% protected");
+  });
+
   it("still enforces the 40% reserve when the coordinator is unavailable", async () => {
     const client = fakeTypeSafe({ family: "implementation" });
     const result = await executeRun(

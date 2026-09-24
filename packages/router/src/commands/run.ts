@@ -320,7 +320,10 @@ export async function executeRun(
       (selected.account.ownership === "shared" && !deps.activityClient
         ? "shared subscription currently active"
         : undefined),
-    reservePolicy: selected.account.ownership === "shared" ? "40% protected" : "personal account",
+    reservePolicy:
+      selected.account.ownership === "shared"
+        ? `${Math.round(selected.account.reserveFloor * 100)}% protected`
+        : "personal account",
     cacheDecision: decision.sticky
       ? "reused previous route (same phase)"
       : previous
