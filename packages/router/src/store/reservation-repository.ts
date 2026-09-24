@@ -42,6 +42,15 @@ export class ReservationRepository {
   cleanupExpired(now: number): void {
     this.db.prepare("delete from capacity_reservations where expires_at <= ?").run(now);
   }
+  /** `activeRatio` without the expiry cleanup, for read-only capacity checks. */
+  peekActiveRatio(accountId: string, now: number): number {
+    const row = this.db
+      .prepare(
+        "select coalesce(sum(ratio), 0) as total from capacity_reservations where account_id = ? and expires_at > ?",
+      )
+      .get(accountId, now) as { total: number };
+    return row.total;
+  }
   activeRatio(accountId: string, now: number): number {
     this.cleanupExpired(now);
     const row = this.db

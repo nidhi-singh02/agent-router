@@ -53,6 +53,20 @@ export class ReservationService {
     return reservation;
   }
 
+  /**
+   * The same capacity test as `tryCreate`, without writing or deleting anything. Used by a
+   * `--worktree` dry run, which must not create a reservation even transiently.
+   */
+  wouldFit(input: { accountId: string; ratio: number; maxTotalRatio: number }): boolean {
+    const now = this.now();
+    const active = this.repository
+      ? this.repository.peekActiveRatio(input.accountId, now)
+      : [...this.reservations.values()]
+          .filter((item) => item.accountId === input.accountId && item.expiresAt > now)
+          .reduce((sum, item) => sum + item.ratio, 0);
+    return active + input.ratio <= input.maxTotalRatio + Number.EPSILON;
+  }
+
   reconcile(accountId: string, ratio: number): void {
     if (this.repository) {
       this.repository.reconcile(accountId, ratio);

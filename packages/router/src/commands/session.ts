@@ -25,6 +25,17 @@ export function formatSession(session: RouterSession): string {
   }
   lines.push(`Agent: ${session.route?.agentName ?? "none"}`);
   lines.push(`Pane: ${session.paneId ?? "none"}`);
+  // Sessions recorded without `--worktree` have no workspace and print as they always have.
+  const workspace = session.workspace;
+  if (workspace) {
+    lines.push(
+      `Workspace isolation: ${workspace.isolated ? "enabled" : "disabled"}`,
+      `Worktree: ${workspace.path}`,
+      `Branch: ${workspace.branch}`,
+      `Repository: ${workspace.repository.sourceRoot} (git dir ${workspace.repository.gitCommonDir})`,
+      `Base commit: ${workspace.baseCommit}`,
+    );
+  }
   lines.push(`Started: ${session.createdAt}`);
   return lines.join("\n");
 }

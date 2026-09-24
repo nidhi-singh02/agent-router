@@ -62,4 +62,19 @@ describe("reservations", () => {
     expect(service.activeRatio("acct")).toBe(0);
     db.close();
   });
+
+  it("checks capacity read-only with wouldFit", () => {
+    const home = mkdtempSync(path.join(os.tmpdir(), "router-reservations-"));
+    const db = openDatabase({ home });
+    for (const service of [
+      new ReservationService(() => 1_000),
+      new ReservationService(() => 1_000, new ReservationRepository(db)),
+    ]) {
+      service.create({ accountId: "acct", ratio: 0.05, ttlMs: 60_000 });
+      expect(service.wouldFit({ accountId: "acct", ratio: 0.05, maxTotalRatio: 0.1 })).toBe(true);
+      expect(service.wouldFit({ accountId: "acct", ratio: 0.06, maxTotalRatio: 0.1 })).toBe(false);
+      expect(service.activeRatio("acct")).toBeCloseTo(0.05);
+    }
+    db.close();
+  });
 });

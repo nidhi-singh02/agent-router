@@ -73,6 +73,11 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
     .option("--session <id>", "Route the next phase of an earlier router session")
     .option("--usage", "Also run official CLI/API and browser quota collectors (slower)", false)
     .option("--no-enrich", "Skip pull request size resolution")
+    .option(
+      "--worktree",
+      "Launch in a new Git worktree and branch from the committed HEAD (needs a clean checkout)",
+      false,
+    )
     .action(
       async (
         task: string,
@@ -82,18 +87,22 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
           usage?: boolean;
           session?: string;
           enrich?: boolean;
+          worktree?: boolean;
         },
       ) => {
         try {
           const result = await (options.run ?? executeRun)(
             task,
-            flags.session
-              ? {
-                  dryRun: Boolean(flags.dryRun),
-                  previousSessionId: flags.session,
-                  noEnrich: flags.enrich === false,
-                }
-              : { dryRun: Boolean(flags.dryRun), noEnrich: flags.enrich === false },
+            {
+              ...(flags.session
+                ? {
+                    dryRun: Boolean(flags.dryRun),
+                    previousSessionId: flags.session,
+                    noEnrich: flags.enrich === false,
+                  }
+                : { dryRun: Boolean(flags.dryRun), noEnrich: flags.enrich === false }),
+              ...(flags.worktree ? { worktree: true } : {}),
+            },
             options.runDeps ??
               (await (options.createRunDeps ?? createDefaultRunDeps)(env, {
                 usageMode: flags.usage ? "full" : "local",

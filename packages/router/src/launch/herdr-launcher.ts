@@ -76,6 +76,8 @@ export async function launchRoutedAgent(input: {
   existingLaunchToken?: string;
   existingPaneId?: string;
   herdr?: HerdrClient;
+  /** Working directory for a new pane; omitted, Herdr uses the current pane's directory. */
+  cwd?: string;
 }): Promise<LaunchResult> {
   if (!isHerdrEnv(input.env) && !input.dryRun) {
     return { ok: false, error: "HERDR_ENV=1 is required to launch a pane" };
@@ -103,7 +105,10 @@ export async function launchRoutedAgent(input: {
   let paneId = input.existingPaneId;
   let paneCreated = false;
   if (!paneId) {
-    const split = await herdr.splitCurrent();
+    const split =
+      input.cwd === undefined
+        ? await herdr.splitCurrent()
+        : await herdr.splitCurrent({ cwd: input.cwd });
     if (!split.ok) {
       return { ok: false, error: herdrError(split, "herdr pane split failed"), launchToken };
     }

@@ -4,6 +4,7 @@ export function formatDecisionCard(input: {
   taskSize?: string;
   why: string;
   previousSession?: string;
+  workspace?: string;
   sharedActivity?: string;
   reservePolicy: string;
   cacheDecision: string;
@@ -18,6 +19,7 @@ export function formatDecisionCard(input: {
     input.taskSize ? `Task size: ${input.taskSize}` : undefined,
     `Why: ${input.why}`,
     input.previousSession ? `Previous session: ${input.previousSession}` : undefined,
+    input.workspace ? `Workspace: ${input.workspace}` : undefined,
     input.sharedActivity ? `Shared activity: ${input.sharedActivity}` : undefined,
     `Reserve policy: ${input.reservePolicy}`,
     `Cache decision: ${input.cacheDecision}`,

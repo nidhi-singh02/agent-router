@@ -21,6 +21,26 @@ describe("herdr command adapter", () => {
     ]);
   });
 
+  it("passes a working directory with spaces to the split as one argument", async () => {
+    const calls: string[][] = [];
+    const herdr = createHerdrClient(async (argv) => {
+      calls.push([...argv]);
+      return { ok: true, code: 0, stdout: "pane_abc\n", stderr: "" };
+    });
+    await herdr.splitCurrent({ cwd: "/tmp/router home/worktrees/wt-1" });
+    expect(calls[0]).toEqual([
+      "herdr",
+      "pane",
+      "split",
+      "--current",
+      "--direction",
+      "right",
+      "--cwd",
+      "/tmp/router home/worktrees/wt-1",
+      "--no-focus",
+    ]);
+  });
+
   it("starts Cursor in an existing pane with extra agent args after --", async () => {
     const calls: string[][] = [];
     const herdr = createHerdrClient(async (argv) => {

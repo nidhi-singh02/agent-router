@@ -65,4 +65,24 @@ describe("handoff builder", () => {
       ].join("\n"),
     );
   });
+
+  it("names the isolated worktree without redacting its path", () => {
+    const handoff = buildHandoff({
+      task: "Implement the plan.",
+      constraints: [],
+      currentPhase: "implementation",
+      relevantFiles: [],
+      completedChecks: [],
+      remainingAcceptanceCriteria: [],
+    });
+    const prompt = formatHandoffPrompt(handoff, {
+      sessionId: "sess_1",
+      workspace: { path: "/tmp/router home/task-notes/wt-1", branch: "router/wt-1" },
+    });
+    expect(prompt).toContain(
+      "Workspace: isolated Git worktree /tmp/router home/task-notes/wt-1 on branch router/wt-1.",
+    );
+    expect(prompt.indexOf("Workspace:")).toBeLessThan(prompt.indexOf("Router session: sess_1"));
+    expect(formatHandoffPrompt(handoff, { sessionId: "sess_1" })).not.toContain("Workspace:");
+  });
 });
