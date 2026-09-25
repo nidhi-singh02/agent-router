@@ -11,6 +11,24 @@ router run "<task>" --dry-run
 `router usage refresh --dry-run` collects the selected source (default `local-session`) and
 prints one line per account; it does not write SQLite. Omit `--dry-run` to persist.
 `router run --dry-run` prints a redacted decision and does not create a Herdr pane.
+`router run --worktree --dry-run` also previews the worktree path, branch, and starting commit.
+It checks that the checkout is a clean Git repository but creates no branch, worktree, pane,
+session, or reservation (capacity is checked read-only).
+
+## Worktrees
+
+`router run --worktree` creates worktrees under `<router home>/worktrees/` and never removes
+them. List and clean them up with Git from the source checkout:
+
+```sh
+git worktree list
+git worktree remove "<path>"   # refuses if the worktree has uncommitted changes
+git worktree prune             # forget worktrees whose directory was deleted by hand
+```
+
+A continued isolated session (`router run --session <id>`) whose worktree was removed, moved,
+switched to another branch, or re-pointed at another repository stops with an error instead of
+launching elsewhere. Start a new `--worktree` run in that case.
 
 ## Coordinator
 

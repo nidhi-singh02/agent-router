@@ -3,7 +3,11 @@ import { runCommand as defaultRunCommand, type runCommand } from "../collectors/
 import { redactCollectorText } from "../collectors/normalizer.js";
 import { resolveEnrichment, type Resolution } from "../enrich/resolver.js";
 import { advisoryMultiplier, toShapes, type EnrichmentShapes } from "../enrich/buckets.js";
-import { RouterSessionSchema } from "../domain/session.js";
+import {
+  RouterSessionSchema,
+  type RouterSession,
+  type SessionWorkspace,
+} from "../domain/session.js";
 import type { SessionRepository } from "../store/session-repository.js";
 import { evaluateEligibility } from "../policy/eligibility.js";
 import { revalidateDecision } from "../policy/revalidate.js";
@@ -24,6 +28,16 @@ import { readSharedActivity } from "../activity/activity-service.js";
 import type { CoordinatorClient } from "../activity/coordinator-client.js";
 import { cacheAffinityKey } from "../sessions/cache-affinity.js";
 import { remainingRatio } from "../policy/quota.js";
+import {
+  createGitRunner,
+  createWorktree,
+  inspectSourceCheckout,
+  planWorktree,
+  validateWorkspace,
+  type GitRunner,
+  type SourceCheckout,
+  type WorktreePlan,
+} from "../workspace/git-worktree.js";
 
 export interface RunDeps {
   accounts: Account[];
@@ -46,11 +60,144 @@ export interface RunDeps {
   runCommand?: typeof runCommand;
   /** Persistent config switch; either this or `options.noEnrich` disables enrichment. */
   enrichmentEnabled?: boolean;
+  /** Directory `router run` was started from; `--worktree` branches from it. Default: cwd. */
+  cwd?: string;
+  /** Parent directory for worktrees created by `--worktree`; must be outside the checkout. */
+  worktreeRoot?: string;
+  /** Git runner for `--worktree` and isolated continuations, injected for tests. */
+  git?: GitRunner;
+}
+
+export interface RunOptions {
+  dryRun: boolean;
+  previousSessionId?: string;
+  noEnrich?: boolean;
+  /** Create a Git worktree and launch the agent in it (`router run --worktree`). */
+  worktree?: boolean;
+}
+
+/** What `--worktree`, or a continued isolated session, does with the workspace. */
+type WorkspaceIntent =
+  | { action: "create"; source: SourceCheckout; plan: WorktreePlan }
+  | { action: "reuse"; workspace: SessionWorkspace };
+
+function workspaceFailure(
+  error: string,
+  workspace?: Record<string, unknown>,
+): { output: string; json: unknown; code: number } {
+  return {
+    code: 2,
+    output: error,
+    json: { ok: false, error, ...(workspace ? { workspace } : {}) },
+  };
+}
+
+/**
+ * Resolves the workspace before any routing call, so a missing repository, a dirty
+ * checkout, or a broken recorded worktree stops the run before TypeSafe, reservations,
+ * Herdr, or an agent are involved. Read-only: nothing is created here.
+ */
+async function prepareWorkspace(
+  options: RunOptions,
+  previous: RouterSession | undefined,
+  deps: RunDeps,
+  git: () => GitRunner,
+): Promise<
+  | { ok: true; intent?: WorkspaceIntent }
+  | { ok: false; failure: ReturnType<typeof workspaceFailure> }
+> {
+  const recorded = previous?.workspace;
+  if (previous && recorded?.isolated) {
+    const checked = await validateWorkspace(git(), recorded);
+    if (!checked.ok) {
+      return {
+        ok: false,
+        failure: workspaceFailure(
+          `Cannot continue session ${previous.id} in its isolated worktree: ${checked.error}\n` +
+            "Nothing was launched; the router does not fall back to the current directory.",
+          workspaceJson(recorded, "reuse", false),
+        ),
+      };
+    }
+    return { ok: true, intent: { action: "reuse", workspace: recorded } };
+  }
+  if (!options.worktree) {
+    return { ok: true };
+  }
+  if (!deps.worktreeRoot) {
+    return {
+      ok: false,
+      failure: workspaceFailure("--worktree is unavailable: no worktree directory is configured."),
+    };
+  }
+  const source = await inspectSourceCheckout(git(), deps.cwd ?? process.cwd());
+  if (!source.ok) {
+    return { ok: false, failure: workspaceFailure(source.error) };
+  }
+  const plan = await planWorktree({
+    git: git(),
+    source,
+    root: deps.worktreeRoot,
+    now: new Date(),
+  });
+  if (!plan.ok) {
+    return { ok: false, failure: workspaceFailure(plan.error) };
+  }
+  return { ok: true, intent: { action: "create", source, plan } };
+}
+
+function workspaceJson(
+  workspace: Pick<SessionWorkspace, "path" | "branch"> & Partial<SessionWorkspace>,
+  action: "create" | "reuse",
+  created: boolean,
+): Record<string, unknown> {
+  return {
+    isolated: true,
+    action,
+    created,
+    path: workspace.path,
+    branch: workspace.branch,
+    baseCommit: workspace.baseCommit,
+    repository: workspace.repository,
+  };
+}
+
+function intentJson(intent: WorkspaceIntent): Record<string, unknown> {
+  return intent.action === "reuse"
+    ? workspaceJson(intent.workspace, "reuse", false)
+    : workspaceJson(
+        {
+          ...intent.plan,
+          baseCommit: intent.source.baseCommit,
+          repository: {
+            gitCommonDir: intent.source.gitCommonDir,
+            sourceRoot: intent.source.sourceRoot,
+          },
+        },
+        "create",
+        false,
+      );
+}
+
+function describeWorkspace(
+  intent: WorkspaceIntent,
+  dryRun: boolean,
+  created: SessionWorkspace | undefined,
+): string {
+  if (intent.action === "reuse") {
+    const { path, branch } = intent.workspace;
+    return `${dryRun ? "would reuse" : "reused"} worktree ${path} (branch ${branch})`;
+  }
+  const { source, plan } = intent;
+  const from = `${source.baseCommit.slice(0, 12)} (${source.sourceBranch ?? "detached HEAD"}) of ${source.sourceRoot}`;
+  return dryRun
+    ? `would create worktree ${plan.path} on new branch ${plan.branch} from ${from}`
+    : `created worktree ${created?.path ?? plan.path} on branch ${plan.branch} from ${from}`;
 }
 
 export async function executeRun(
   task: string,
-  options: { dryRun: boolean; previousSessionId?: string; noEnrich?: boolean },
+  options: RunOptions,
   deps: RunDeps,
 ): Promise<{ output: string; json: unknown; code: number }> {
   const now = deps.now ?? new Date();
@@ -61,6 +208,13 @@ export async function executeRun(
     const output = `Session not found: ${options.previousSessionId}`;
     return { code: 2, output, json: { ok: false, error: output } };
   }
+  let gitRunner: GitRunner | undefined;
+  const git = () => (gitRunner ??= deps.git ?? createGitRunner());
+  const prepared = await prepareWorkspace(options, previous, deps, git);
+  if (!prepared.ok) {
+    return prepared.failure;
+  }
+  const intent = prepared.intent;
   const enrichmentOff = options.noEnrich === true || deps.enrichmentEnabled === false;
   const resolution: Resolution = enrichmentOff
     ? { status: "skipped" }
@@ -212,13 +366,27 @@ export async function executeRun(
         deps.usage[selected.account.id]!.activeReservationRatio -
         selected.account.reserveFloor
       : Number.POSITIVE_INFINITY;
-  const reservation = reservations.tryCreate({
-    accountId: selected.account.id,
-    ratio: selected.estimatedCostRatio,
-    ttlMs: 60_000,
-    maxTotalRatio,
-  });
-  if (!reservation)
+  // A `--worktree` dry run must not write a reservation, even one released immediately, so
+  // it runs the same capacity test read-only. Other dry runs keep their reserve-and-release.
+  const reservation =
+    options.dryRun && intent
+      ? undefined
+      : reservations.tryCreate({
+          accountId: selected.account.id,
+          ratio: selected.estimatedCostRatio,
+          ttlMs: 60_000,
+          maxTotalRatio,
+        });
+  const capacityOk = reservation
+    ? true
+    : options.dryRun && intent
+      ? reservations.wouldFit({
+          accountId: selected.account.id,
+          ratio: selected.estimatedCostRatio,
+          maxTotalRatio,
+        })
+      : false;
+  if (!capacityOk)
     return {
       code: 2,
       output: "Launch revalidation failed: reservation-conflict",
@@ -232,6 +400,27 @@ export async function executeRun(
     completedChecks: [],
     remainingAcceptanceCriteria: [],
   });
+  // The worktree is created only now, after routing and the reservation succeeded, so a run
+  // that cannot launch anyway leaves nothing behind. On failure nothing is launched.
+  let workspace = intent?.action === "reuse" ? intent.workspace : undefined;
+  if (!options.dryRun && intent?.action === "create") {
+    const created = await createWorktree({
+      git: git(),
+      source: intent.source,
+      plan: intent.plan,
+      now: new Date(),
+    });
+    if (!created.ok) {
+      if (reservation) reservations.release(reservation.id);
+      const output = `Worktree creation failed; no agent was launched. ${created.error}`;
+      return {
+        code: 1,
+        output,
+        json: { ok: false, error: output, workspace: intentJson(intent) },
+      };
+    }
+    workspace = created.workspace;
+  }
   // Recorded launches get their session id up front so the agent can route the next phase.
   const sessionId = !options.dryRun && deps.sessions ? `sess_${randomUUID()}` : undefined;
   const launch = await launchRoutedAgent({
@@ -247,6 +436,7 @@ export async function executeRun(
             previous: previous
               ? { sessionId: previous.id, phase: previous.phase, task: previous.task }
               : undefined,
+            workspace: workspace ? { path: workspace.path, branch: workspace.branch } : undefined,
           }
         : undefined,
     ),
@@ -254,8 +444,10 @@ export async function executeRun(
     herdr: deps.herdr,
     existingLaunchToken: deps.existingLaunchToken,
     existingPaneId: deps.existingPaneId,
+    // An isolated run always launches in its worktree, never in the caller's directory.
+    ...(workspace ? { cwd: workspace.path } : {}),
   });
-  if (options.dryRun || !launch.ok) reservations.release(reservation.id);
+  if (reservation && (options.dryRun || !launch.ok)) reservations.release(reservation.id);
   if (sessionId && deps.sessions) {
     const startedAt = new Date().toISOString();
     const affinityInput = {
@@ -290,17 +482,20 @@ export async function executeRun(
         agent: selected.model.agent,
         promptPrefixHash: key.slice(key.lastIndexOf(":") + 1),
       },
-      reservations: [
-        {
-          id: reservation.id,
-          accountId: reservation.accountId,
-          ratio: reservation.ratio,
-          createdAt: startedAt,
-          expiresAt: new Date(reservation.expiresAt).toISOString(),
-        },
-      ],
+      reservations: reservation
+        ? [
+            {
+              id: reservation.id,
+              accountId: reservation.accountId,
+              ratio: reservation.ratio,
+              createdAt: startedAt,
+              expiresAt: new Date(reservation.expiresAt).toISOString(),
+            },
+          ]
+        : [],
       handoffs: [handoff],
       paneId: launch.paneId,
+      workspace,
       createdAt: startedAt,
       updatedAt: startedAt,
     });
@@ -315,6 +510,7 @@ export async function executeRun(
     previousSession: previous
       ? `${previous.id} (${previous.phase} -> ${decision.phase})`
       : undefined,
+    workspace: intent ? describeWorkspace(intent, options.dryRun, workspace) : undefined,
     sharedActivity:
       ownerMessages.get(selected.account.id) ??
       (selected.account.ownership === "shared" && !deps.activityClient
@@ -342,9 +538,15 @@ export async function executeRun(
     freshness: snapshot ? `refreshed at ${snapshot.collectedAt}` : undefined,
     reset: snapshot?.windows.find((window) => window.resetsAt)?.resetsAt,
   });
+  const workspaceNote =
+    workspace && !launch.ok
+      ? intent?.action === "create"
+        ? `\nLaunch failed after the worktree was created. The worktree was kept, not deleted: ${workspace.path} (branch ${workspace.branch}).`
+        : `\nLaunch failed; the recorded worktree is unchanged: ${workspace.path} (branch ${workspace.branch}).`
+      : "";
   return {
     code: launch.ok ? 0 : 1,
-    output: `${card}\n${launch.printed ?? launch.error ?? ""}`,
+    output: `${card}\n${launch.printed ?? launch.error ?? ""}${workspaceNote}`,
     json: {
       ok: launch.ok,
       selected: selected.opaqueId,
@@ -355,6 +557,14 @@ export async function executeRun(
       agentName: launch.agentName,
       sessionId,
       enrichment: enrichmentJson(resolution),
+      ...(intent
+        ? {
+            ...(launch.ok ? {} : { error: launch.error }),
+            workspace: workspace
+              ? workspaceJson(workspace, intent.action, intent.action === "create")
+              : intentJson(intent),
+          }
+        : {}),
     },
   };
 }

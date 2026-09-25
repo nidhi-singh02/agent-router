@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import path from "node:path";
 import { loadModelCatalog } from "../catalog/model-catalog.js";
 import { loadConfig } from "../config/config-loader.js";
 import type { RunDeps } from "./run.js";
@@ -208,5 +209,8 @@ export async function createDefaultRunDeps(
     activityClient: overrides.activityClient ?? defaultActivityClient(env, overrides.fetchImpl),
     runCommand: overrides.runCommand,
     enrichmentEnabled: config.enrichment?.enabled ?? true,
+    cwd: process.cwd(),
+    // Router state, not the user's checkout, so a worktree is never nested inside the repo.
+    worktreeRoot: path.join(config.home, "worktrees"),
   };
 }

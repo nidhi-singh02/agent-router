@@ -10,7 +10,8 @@ export interface CommandResult {
 export type RunCommand = (argv: readonly string[]) => Promise<CommandResult>;
 
 export interface HerdrClient {
-  splitCurrent(options?: { direction?: "right" | "down" }): Promise<CommandResult>;
+  /** `cwd` starts the new pane's shell in that directory (`herdr pane split --cwd`). */
+  splitCurrent(options?: { direction?: "right" | "down"; cwd?: string }): Promise<CommandResult>;
   startAgent(input: {
     name: string;
     kind: "cursor" | "claude" | "codex" | "opencode";
@@ -87,6 +88,7 @@ export function createHerdrClient(runCommand: RunCommand): HerdrClient {
         "--current",
         "--direction",
         options?.direction ?? "right",
+        ...(options?.cwd === undefined ? [] : ["--cwd", options.cwd]),
         "--no-focus",
       ]);
     },

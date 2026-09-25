@@ -12,6 +12,12 @@ and released under a single tag.
 ### Added
 
 - `router --version` (and `-V`) reports the package version.
+- `router run --worktree` launches the agent in a new Git worktree and branch created from
+  the committed `HEAD` of a clean checkout, outside the checkout. The session records the
+  worktree path, branch, repository identity, and starting commit; `router session` and its
+  `--json` output show them. `router run --session <id>` on an isolated session reuses and
+  validates that worktree instead of the current directory. `--worktree --dry-run` previews
+  the worktree without creating anything. Runs without `--worktree` are unchanged.
 
 ### Changed
 
