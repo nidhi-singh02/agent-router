@@ -33,6 +33,7 @@ import {
   createWorktree,
   inspectSourceCheckout,
   planWorktree,
+  recheckSourceCheckout,
   validateWorkspace,
   type GitRunner,
   type SourceCheckout,
@@ -216,11 +217,19 @@ export async function executeRun(
   }
   const intent = prepared.intent;
   const enrichmentOff = options.noEnrich === true || deps.enrichmentEnabled === false;
+  const enrichmentRun =
+    intent?.action === "reuse"
+      ? (input: Parameters<typeof defaultRunCommand>[0]) =>
+          (deps.runCommand ?? defaultRunCommand)({
+            ...input,
+            cwd: input.cwd ?? intent.workspace.path,
+          })
+      : (deps.runCommand ?? defaultRunCommand);
   const resolution: Resolution = enrichmentOff
     ? { status: "skipped" }
     : await resolveEnrichment({
         task,
-        run: deps.runCommand ?? defaultRunCommand,
+        run: enrichmentRun,
         env: deps.enrichEnv ?? deps.env,
       });
   const enrichment =
@@ -404,6 +413,11 @@ export async function executeRun(
   // that cannot launch anyway leaves nothing behind. On failure nothing is launched.
   let workspace = intent?.action === "reuse" ? intent.workspace : undefined;
   if (!options.dryRun && intent?.action === "create") {
+    const still = await recheckSourceCheckout(git(), intent.source);
+    if (!still.ok) {
+      if (reservation) reservations.release(reservation.id);
+      return workspaceFailure(still.error, intentJson(intent));
+    }
     const created = await createWorktree({
       git: git(),
       source: intent.source,
@@ -420,6 +434,17 @@ export async function executeRun(
       };
     }
     workspace = created.workspace;
+  }
+  if (!options.dryRun && intent?.action === "reuse" && previous) {
+    const checked = await validateWorkspace(git(), intent.workspace);
+    if (!checked.ok) {
+      if (reservation) reservations.release(reservation.id);
+      return workspaceFailure(
+        `Cannot continue session ${previous.id} in its isolated worktree: ${checked.error}\n` +
+          "Nothing was launched; the router does not fall back to the current directory.",
+        workspaceJson(intent.workspace, "reuse", false),
+      );
+    }
   }
   // Recorded launches get their session id up front so the agent can route the next phase.
   const sessionId = !options.dryRun && deps.sessions ? `sess_${randomUUID()}` : undefined;

@@ -328,9 +328,11 @@ router run "implement feature X" --worktree
   `router session --json` show them.
 - Checks run before any routing call, so a missing repository or a dirty checkout costs no
   TypeSafe call, reservation, or pane. The worktree itself is created only after the route
-  and its reservation succeed. If creating it fails, nothing is launched. If the agent then
-  fails to start, the worktree is kept and its path is printed; it is never deleted
-  automatically.
+  and its reservation succeed. Immediately before that, the router reads the checkout again:
+  if it became dirty, or HEAD or the repository changed while routing, the run stops, the
+  reservation is released, and nothing is created. If creating the worktree fails, nothing
+  is launched. If the agent then fails to start, the worktree is kept and its path is
+  printed; it is never deleted automatically.
 - A dry run previews the path, branch, and starting commit, and creates no branch, worktree,
   pane, session, or reservation. Unlike a plain dry run, which reserves capacity and releases
   it at once, a `--worktree` dry run checks capacity read-only. Its TypeSafe calls are the
@@ -339,10 +341,12 @@ router run "implement feature X" --worktree
 `router run --session <id> "<next task>"` on an isolated session reuses the recorded worktree,
 with or without `--worktree`: the next agent (which may be a different one) starts in that
 directory, sees the previous phase's uncommitted files, and no second worktree is created.
-Before launching, the router confirms the directory still exists, is a worktree of the
-recorded repository, and is on the recorded branch. If any check fails it stops with the
-reason; it never falls back to the current directory. Sessions recorded without
-`--worktree` continue exactly as before.
+The router confirms the directory still exists, is a worktree of the recorded repository,
+and is on the recorded branch, once before routing and again immediately before the pane
+opens. If either check fails it stops with the reason; it never falls back to the current
+directory. When that continued task names a pull request, its size is resolved from the
+recorded worktree, including when the command is started from another directory. Sessions
+recorded without `--worktree` continue exactly as before.
 
 Quota and reservations are unchanged: a worktree run is routed, reserved, and revalidated
 against the same account pools as any other run.

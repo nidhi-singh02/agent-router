@@ -28,7 +28,12 @@ git worktree prune             # forget worktrees whose directory was deleted by
 
 A continued isolated session (`router run --session <id>`) whose worktree was removed, moved,
 switched to another branch, or re-pointed at another repository stops with an error instead of
-launching elsewhere. Start a new `--worktree` run in that case.
+launching elsewhere. That check runs again after routing, immediately before the pane opens.
+Pull request size for a continued session is read from the worktree. Start a new `--worktree`
+run when the recorded workspace is no longer usable.
+
+If the source checkout changes while a new `--worktree` run is routing (new commit, or
+uncommitted files), the router does not create the worktree. Commit or clean up, then retry.
 
 ## Coordinator
 

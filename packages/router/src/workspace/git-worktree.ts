@@ -170,6 +170,40 @@ export async function inspectSourceCheckout(
   };
 }
 
+/**
+ * Confirms the checkout preflight recorded is still the one creation should use.
+ * Routing can take long enough for HEAD to move or for the tree to become dirty.
+ */
+export async function recheckSourceCheckout(
+  git: GitRunner,
+  source: SourceCheckout,
+): Promise<Checked<SourceCheckout>> {
+  const again = await inspectSourceCheckout(git, source.sourceRoot);
+  if (!again.ok) {
+    return {
+      ok: false,
+      error: `The source checkout changed while routing; no worktree was created.\n${again.error}`,
+    };
+  }
+  if (again.gitCommonDir !== source.gitCommonDir) {
+    return {
+      ok: false,
+      error:
+        `The source repository changed while routing; no worktree was created. ` +
+        `Expected ${source.gitCommonDir}, found ${again.gitCommonDir}. Retry.`,
+    };
+  }
+  if (again.baseCommit !== source.baseCommit) {
+    return {
+      ok: false,
+      error:
+        `Source HEAD changed while routing (${source.baseCommit.slice(0, 12)} -> ${again.baseCommit.slice(0, 12)}); ` +
+        "no worktree was created. Retry.",
+    };
+  }
+  return again;
+}
+
 export interface WorktreePlan {
   path: string;
   branch: string;

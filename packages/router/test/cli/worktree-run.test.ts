@@ -418,6 +418,46 @@ describe("router run --worktree", () => {
     expect(result.output).toMatch(/needs a clean checkout/);
     ctx.db.close();
   });
+
+  it("does not create a worktree when the checkout becomes dirty while routing", async () => {
+    const ctx = setup();
+    const original = ctx.reservations.tryCreate.bind(ctx.reservations);
+    vi.spyOn(ctx.reservations, "tryCreate").mockImplementation((input) => {
+      writeFileSync(path.join(ctx.repo, "late-change"), "keep\n");
+      return original(input);
+    });
+    const result = await run(ctx.deps, "Implement the approved plan.");
+    expect(result.code).toBe(2);
+    expect(result.output).toMatch(/while routing/);
+    expect(result.output).toMatch(/needs a clean checkout/);
+    expect(readFileSync(path.join(ctx.repo, "late-change"), "utf8")).toBe("keep\n");
+    expect(worktreePaths(ctx.repo)).toHaveLength(1);
+    expect(branches(ctx.repo)).toEqual(["main"]);
+    expect(ctx.herdr.splits()).toEqual([]);
+    expect(ctx.sessions.latest()).toBeUndefined();
+    expect(ctx.reservations.activeRatio(personal.id)).toBe(0);
+    ctx.db.close();
+  });
+
+  it("does not create a worktree when HEAD changes while routing", async () => {
+    const ctx = setup();
+    const before = head(ctx.repo);
+    const original = ctx.reservations.tryCreate.bind(ctx.reservations);
+    vi.spyOn(ctx.reservations, "tryCreate").mockImplementation((input) => {
+      git(ctx.repo, "commit", "--quiet", "--allow-empty", "-m", "moved");
+      return original(input);
+    });
+    const result = await run(ctx.deps, "Implement the approved plan.");
+    expect(result.code).toBe(2);
+    expect(result.output).toMatch(/HEAD changed while routing/);
+    expect(head(ctx.repo)).not.toBe(before);
+    expect(worktreePaths(ctx.repo)).toHaveLength(1);
+    expect(branches(ctx.repo)).toEqual(["main"]);
+    expect(ctx.herdr.splits()).toEqual([]);
+    expect(ctx.sessions.latest()).toBeUndefined();
+    expect(ctx.reservations.activeRatio(personal.id)).toBe(0);
+    ctx.db.close();
+  });
 });
 
 describe("continuing an isolated session", () => {
@@ -573,6 +613,52 @@ describe("continuing an isolated session", () => {
     });
     expect(next.code).toBe(2);
     expect(next.output).toMatch(/expected branch router\/wt-/);
+    ctx.db.close();
+  });
+
+  it("rechecks the recorded worktree after routing and does not launch if it changed", async () => {
+    const ctx = setup();
+    const { id, workspace } = await isolatedSession(ctx);
+    const reserved = ctx.reservations.activeRatio(personal.id);
+    const splitsBefore = ctx.herdr.splits().length;
+    const original = ctx.reservations.tryCreate.bind(ctx.reservations);
+    vi.spyOn(ctx.reservations, "tryCreate").mockImplementation((input) => {
+      git(workspace.path, "checkout", "--quiet", "-b", "moved-during-route");
+      return original(input);
+    });
+    const next = await run(ctx.deps, "Implement it.", {
+      previousSessionId: id,
+      worktree: undefined,
+    });
+    expect(next.code).toBe(2);
+    expect(next.output).toMatch(/expected branch router\/wt-/);
+    expect(next.output).toMatch(/does not fall back to the current directory/);
+    expect(ctx.herdr.splits()).toHaveLength(splitsBefore);
+    expect(ctx.sessions.latest()?.id).toBe(id);
+    expect(ctx.reservations.activeRatio(personal.id)).toBe(reserved);
+    ctx.db.close();
+  });
+
+  it("resolves continuation enrichment from the recorded worktree", async () => {
+    const ctx = setup();
+    const { id, workspace } = await isolatedSession(ctx);
+    const runCommand = vi.fn(async () => ({
+      ok: false,
+      stdout: "",
+      stderr: "",
+      code: 1,
+      timedOut: false,
+      executedReturnedOutput: false as const,
+    }));
+    const result = await executeRun(
+      "Review PR 12",
+      { dryRun: true, previousSessionId: id },
+      { ...ctx.deps, cwd: tempDir(), runCommand },
+    );
+    expect(result.code).toBe(0);
+    expect(runCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ command: "git", cwd: workspace.path }),
+    );
     ctx.db.close();
   });
 
