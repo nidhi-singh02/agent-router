@@ -215,35 +215,53 @@ describe("decision engine", () => {
     ]);
   });
 
-  it("maps ranking and effort TypeSafe failures to typesafe-unavailable", async () => {
-    const rankingFail = fakeClient((request) => {
-      if ("family" in request.questions) {
-        return {
-          family: choiceAnswer("implementation", 0.9, { implementation: 1 }),
-          phase: choiceAnswer("implementation", 0.9, { implementation: 1 }),
-          complexity: scoreAnswer(1, 0.8),
-          creativity: scoreAnswer(0, 0.8),
-          consequence: scoreAnswer(1, 0.8),
-          cacheValue: scoreAnswer(1, 0.8),
-        };
-      }
-      throw new Error("ranking down");
-    });
-    await expect(
-      decideRoute({
-        task: "Implement the approved plan.",
-        candidates: eligible,
-        userRequestedUltra: false,
-        client: rankingFail,
-      }),
-    ).resolves.toMatchObject({ status: "typesafe-unavailable" });
+  it.each(["implementation", "routine-transformation", "metadata"])(
+    "keeps ranking failure behavior for %s",
+    async (family) => {
+      const rankingFail = fakeClient((request) => {
+        if ("family" in request.questions) {
+          return {
+            family: choiceAnswer(family, 0.9, { [family]: 1 }),
+            phase: choiceAnswer("implementation", 0.9, { implementation: 1 }),
+            complexity: scoreAnswer(1, 0.8),
+            creativity: scoreAnswer(0, 0.8),
+            consequence: scoreAnswer(1, 0.8),
+            cacheValue: scoreAnswer(1, 0.8),
+          };
+        }
+        throw new Error("ranking down");
+      });
+      await expect(
+        decideRoute({
+          task: "Implement the approved plan.",
+          candidates: eligible,
+          userRequestedUltra: false,
+          client: rankingFail,
+        }),
+      ).resolves.toEqual({
+        status: "typesafe-unavailable",
+        fallback:
+          family === "implementation"
+            ? undefined
+            : {
+                candidateOpaqueId: "cand_safe_a",
+                effort: "low",
+                phase: family,
+              },
+      });
+    },
+  );
 
+  it.each([
+    ["cand_safe_a", "low"],
+    ["cand_safe_b", "medium"],
+  ])("preserves ranked choice %s when effort fails", async (opaqueId, effort) => {
     const effortFail = fakeClient((request) => {
       if ("route" in request.questions) {
-        return { route: choiceAnswer("cand_safe_a", 0.9, { cand_safe_a: 0.9 }) };
+        return { route: choiceAnswer(opaqueId, 0.9, { [opaqueId]: 0.9 }) };
       }
       if ("effort" in request.questions) {
-        throw new Error("effort down");
+        throw new Error("503 Service temporarily unavailable");
       }
       return {
         family: choiceAnswer("implementation", 0.9, { implementation: 1 }),
@@ -261,7 +279,13 @@ describe("decision engine", () => {
         userRequestedUltra: false,
         client: effortFail,
       }),
-    ).resolves.toMatchObject({ status: "typesafe-unavailable" });
+    ).resolves.toMatchObject({
+      status: "selected",
+      candidateOpaqueId: opaqueId,
+      effort,
+      sticky: false,
+      trace: { fallbackUsed: true },
+    });
   });
 
   it("allows task text that mentions Telegram or cookie while still excluding secrets", async () => {

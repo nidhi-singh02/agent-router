@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { assertSafeState } from "../../src/semantic/typesafe-client.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { assertSafeState, createRecordingClient } from "../../src/semantic/typesafe-client.js";
 
 describe("assertSafeState", () => {
   it("allows legitimate task text that mentions Telegram or cookie", () => {
@@ -43,5 +43,56 @@ describe("assertSafeState", () => {
     "Document an amqps service URL with credentials removed.",
   ])("allows benign credential-related prose: %s", (task) => {
     expect(() => assertSafeState({ task })).not.toThrow();
+  });
+});
+
+describe("createRecordingClient", () => {
+  afterEach(() => vi.useRealTimers());
+
+  const request = { state: { task: "Implement the plan" }, questions: {} };
+  const result = { model: "fake-jev", answers: {}, usage: { input_tokens: 1, output_tokens: 1 } };
+
+  it.each(["503 Service temporarily unavailable", "Temporarily Unavailable"])(
+    "retries %s once after 600ms and records both attempts",
+    async (message) => {
+      vi.useFakeTimers();
+      const systemOne = vi.fn().mockRejectedValueOnce(new Error(message)).mockResolvedValue(result);
+      const client = createRecordingClient({ systemOne });
+      const pending = client.systemOne(request);
+      await vi.advanceTimersByTimeAsync(599);
+      expect(systemOne).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(pending).resolves.toEqual(result);
+      expect(systemOne.mock.calls).toEqual([[request], [request]]);
+      expect(client.calls).toEqual([request, request]);
+      expect(client.traces).toEqual([
+        { request, success: false, error: message },
+        { request, success: true },
+      ]);
+    },
+  );
+
+  it("rethrows the second failure without another retry", async () => {
+    vi.useFakeTimers();
+    const error = new Error("503 still unavailable");
+    const systemOne = vi.fn().mockRejectedValue(error);
+    const client = createRecordingClient({ systemOne });
+    const assertion = expect(client.systemOne(request)).rejects.toBe(error);
+    await vi.runAllTimersAsync();
+    await assertion;
+    expect(systemOne).toHaveBeenCalledTimes(2);
+    expect(client.traces).toEqual([
+      { request, success: false, error: error.message },
+      { request, success: false, error: error.message },
+    ]);
+  });
+
+  it("does not retry unrelated errors", async () => {
+    const error = new Error("401 Unauthorized");
+    const systemOne = vi.fn().mockRejectedValue(error);
+    const client = createRecordingClient({ systemOne });
+    await expect(client.systemOne(request)).rejects.toBe(error);
+    expect(systemOne).toHaveBeenCalledTimes(1);
+    expect(client.traces).toEqual([{ request, success: false, error: error.message }]);
   });
 });
