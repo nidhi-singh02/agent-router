@@ -5,19 +5,39 @@ import {
   type SystemOneResult,
 } from "@typesafe-ai/sdk";
 
+export type TypeSafeTrace =
+  | { request: SystemOneRequest; success: true }
+  | { request: SystemOneRequest; success: false; error: string };
+
 export interface TypeSafePort {
+  traces?: TypeSafeTrace[];
   calls: SystemOneRequest[];
   systemOne<const Q extends Questions>(request: SystemOneRequest<Q>): Promise<SystemOneResult<Q>>;
 }
 
 export function createRecordingClient(inner: Pick<TypeSafeClient, "systemOne">): TypeSafePort {
   const calls: SystemOneRequest[] = [];
+  const traces: TypeSafeTrace[] = [];
   return {
     calls,
+    traces,
     async systemOne(request) {
       assertSafeState(request.state);
-      calls.push(request as SystemOneRequest);
-      return inner.systemOne(request);
+      for (let attempt = 0; ; attempt += 1) {
+        calls.push(request as SystemOneRequest);
+        try {
+          const result = await inner.systemOne(request);
+          traces.push({ request, success: true });
+          return result;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          traces.push({ request, success: false, error: message });
+          if (attempt !== 0 || !/503|temporarily unavailable/i.test(message)) {
+            throw error;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 600));
+        }
+      }
     },
   };
 }
