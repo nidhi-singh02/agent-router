@@ -16,18 +16,26 @@ import type { TypeSafePort } from "../semantic/typesafe-client.js";
 import { formatDecisionCard } from "../presentation/decision-card.js";
 import { formatPoolQuota } from "../presentation/quota.js";
 import { launchRoutedAgent } from "../launch/herdr-launcher.js";
-import type { HerdrClient } from "../launch/herdr-client.js";
+import type { HerdrClient, HerdrPaneClient } from "../launch/herdr-client.js";
 import { buildHandoff, formatHandoffPrompt } from "../handoff/handoff-builder.js";
 import type { Account } from "../domain/account.js";
 import type { ModelProfile } from "../domain/model-profile.js";
 import type { UsageSnapshot } from "../domain/usage.js";
 import type { ReasoningEffort } from "../domain/model-profile.js";
-import { estimateTaskCostRatio } from "../policy/cost-estimator.js";
+import { estimateTaskCostRatio, TASK_BASELINE_RATIO } from "../policy/cost-estimator.js";
 import { ReservationService } from "../reservations/reservation-service.js";
 import { readSharedActivity } from "../activity/activity-service.js";
 import type { CoordinatorClient } from "../activity/coordinator-client.js";
 import { cacheAffinityKey } from "../sessions/cache-affinity.js";
 import { remainingRatio } from "../policy/quota.js";
+import type { EffortChangeRepository } from "../store/effort-change-repository.js";
+import { taskUnlocksTopTier } from "../live-effort/levels.js";
+import {
+  continueInPlace,
+  inheritTopTier,
+  planInPlace,
+  type InPlaceOutcome,
+} from "../live-effort/in-place.js";
 import {
   createGitRunner,
   createWorktree,
@@ -54,7 +62,7 @@ export interface RunDeps {
   existingLaunchToken?: string;
   existingPaneId?: string;
   activityClient?: CoordinatorClient;
-  sessions?: Pick<SessionRepository, "save" | "get">;
+  sessions?: Pick<SessionRepository, "save" | "get" | "latestForPane">;
   /** Where the TypeSafe key was looked for, when none was found. */
   typesafeKeyHint?: string;
   /** Subprocess runner, injected for tests. */
@@ -67,6 +75,18 @@ export interface RunDeps {
   worktreeRoot?: string;
   /** Git runner for `--worktree` and isolated continuations, injected for tests. */
   git?: GitRunner;
+  /** `config.json` `liveEffort.enabled`: continue a phase in the same pane when possible. */
+  liveEffortEnabled?: boolean;
+  /** Pane control for in-place continuation; present inside Herdr. */
+  herdrPane?: HerdrPaneClient;
+  effortChanges?: Pick<
+    EffortChangeRepository,
+    "record" | "tryLock" | "unlock" | "agentSwitchStats"
+  >;
+  /** The caller's allowlisted variables (`liveEffortCallerEnv`). Never passed to a launch. */
+  callerEnv?: NodeJS.Dict<string>;
+  sleep?: (ms: number) => Promise<void>;
+  switchTimeoutMs?: number;
 }
 
 export interface RunOptions {
@@ -269,7 +289,7 @@ export async function executeRun(
     for (const model of deps.models.filter((item) => account.enabledModels.includes(item.id))) {
       const estimatedCostRatio = estimateTaskCostRatio({
         relativeQuotaCost: model.relativeQuotaCost,
-        baselineRatio: 0.02,
+        baselineRatio: TASK_BASELINE_RATIO,
       });
       const usageWithReservations = {
         ...usage,
@@ -302,10 +322,14 @@ export async function executeRun(
       json: { ok: false, exclusions },
     };
   }
+  // Only the root task can unlock max/ultra; a continued task, which an agent writes, never does.
+  const topTierUnlocked = previous
+    ? inheritTopTier(previous, (id) => deps.sessions?.get(id))
+    : taskUnlocksTopTier(task);
   const decision = await decideRoute({
     task,
     enrichment,
-    userRequestedUltra: /\bultra\b/i.test(task),
+    topTierUnlocked,
     client: deps.client,
     candidates: eligible.map((item) => ({
       opaqueId: item.opaqueId,
@@ -448,83 +472,201 @@ export async function executeRun(
   }
   // Recorded launches get their session id up front so the agent can route the next phase.
   const sessionId = !options.dryRun && deps.sessions ? `sess_${randomUUID()}` : undefined;
-  const launch = await launchRoutedAgent({
-    env: deps.env,
-    agent: selected.model.agent,
-    launchName: selected.model.launchName,
+  const handoffPrompt = formatHandoffPrompt(
+    handoff,
+    sessionId
+      ? {
+          sessionId,
+          previous: previous
+            ? { sessionId: previous.id, phase: previous.phase, task: previous.task }
+            : undefined,
+          workspace: workspace ? { path: workspace.path, branch: workspace.branch } : undefined,
+        }
+      : undefined,
+  );
+  const liveEffortReady = Boolean(
+    deps.liveEffortEnabled && deps.herdr && deps.herdrPane && deps.effortChanges,
+  );
+  const inPlace = planInPlace({
+    enabled: liveEffortReady,
+    previous,
+    accountId: selected.account.id,
+    modelId: selected.model.id,
     effort: decision.effort,
-    handoff: formatHandoffPrompt(
-      handoff,
-      sessionId
-        ? {
-            sessionId,
-            previous: previous
-              ? { sessionId: previous.id, phase: previous.phase, task: previous.task }
-              : undefined,
-            workspace: workspace ? { path: workspace.path, branch: workspace.branch } : undefined,
-          }
-        : undefined,
-    ),
-    dryRun: options.dryRun,
-    herdr: deps.herdr,
-    existingLaunchToken: deps.existingLaunchToken,
-    existingPaneId: deps.existingPaneId,
-    // An isolated run always launches in its worktree, never in the caller's directory.
-    ...(workspace ? { cwd: workspace.path } : {}),
+    creatingWorktree: intent?.action === "create",
+    ...(previous?.paneId && deps.sessions
+      ? { latestForPane: deps.sessions.latestForPane(previous.paneId) }
+      : {}),
+    // The launch env drops agent markers; the caller's allowlisted variables carry them.
+    env: { ...deps.env, ...deps.callerEnv },
   });
-  if (reservation && (options.dryRun || !launch.ok)) reservations.release(reservation.id);
-  if (sessionId && deps.sessions) {
-    const startedAt = new Date().toISOString();
-    const affinityInput = {
-      provider: selected.account.provider,
-      modelId: selected.model.id,
-      effort: decision.effort,
-      agent: selected.model.agent,
-      promptPrefix: task.slice(0, 80),
-    };
-    const key = cacheAffinityKey(affinityInput);
-    const session = RouterSessionSchema.parse({
-      id: sessionId,
-      previousSessionId: previous?.id,
-      task: redactCollectorText(task),
-      phase: decision.phase,
-      route: {
-        accountId: selected.account.id,
-        modelId: selected.model.id,
-        agent: selected.model.agent,
-        launchName: selected.model.launchName,
-        effort: decision.effort,
-        reason: decision.reason,
-        status: launch.ok ? "launched" : "launch-failed",
-        launchToken: launch.launchToken,
-        agentName: launch.agentName,
-        error: launch.ok ? undefined : redactCollectorText(launch.error ?? "launch failed"),
-      },
-      cacheAffinity: {
+  let inPlaceOutcome: InPlaceOutcome | undefined;
+  if (inPlace.ok && !options.dryRun && sessionId) {
+    inPlaceOutcome = await continueInPlace({
+      plan: inPlace.plan,
+      handoffPrompt,
+      herdr: deps.herdr!,
+      pane: deps.herdrPane!,
+      effortChanges: deps.effortChanges!,
+      stillCurrent: () => deps.sessions?.latestForPane(inPlace.plan.paneId)?.id === previous?.id,
+      // Released below, once the new session that now owns the pane is saved.
+      holdLock: true,
+      callerEnv: deps.callerEnv ?? deps.env,
+      ...(deps.sleep ? { sleep: deps.sleep } : {}),
+      ...(deps.switchTimeoutMs ? { switchTimeoutMs: deps.switchTimeoutMs } : {}),
+    });
+  }
+  const continuedInPlace = inPlace.ok && inPlaceOutcome?.ok === true;
+  // The handoff may already be running in the old pane; a new pane would duplicate it.
+  const unconfirmedInPlace =
+    inPlace.ok && inPlaceOutcome?.ok === false && inPlaceOutcome.noFallback === true;
+  const launch = unconfirmedInPlace
+    ? {
+        ok: false,
+        paneCreated: false,
+        paneId: inPlace.plan.paneId,
+        agentName: inPlace.plan.agentName,
+        launchToken: previous?.route?.launchToken,
+        printed: undefined,
+        error:
+          `Sent the next phase to ${inPlace.plan.agentName} in pane ${inPlace.plan.paneId}, ` +
+          "but could not confirm it started. Check that pane before retrying; no new pane was opened.",
+      }
+    : continuedInPlace
+      ? {
+          ok: true,
+          paneCreated: false,
+          paneId: inPlace.plan.paneId,
+          agentName: inPlace.plan.agentName,
+          launchToken: previous?.route?.launchToken,
+          printed: inPlaceMessage({
+            plan: inPlace.plan,
+            phase: decision.phase,
+            turnBreak: inPlaceOutcome?.ok === true && inPlaceOutcome.turnBreak,
+            handoffPrompt,
+          }),
+          error: undefined,
+        }
+      : await launchRoutedAgent({
+          env: deps.env,
+          agent: selected.model.agent,
+          launchName: selected.model.launchName,
+          effort: decision.effort,
+          handoff: handoffPrompt,
+          dryRun: options.dryRun,
+          herdr: deps.herdr,
+          existingLaunchToken: deps.existingLaunchToken,
+          existingPaneId: deps.existingPaneId,
+          // An isolated run always launches in its worktree, never in the caller's directory.
+          ...(workspace ? { cwd: workspace.path } : {}),
+        });
+  // An unconfirmed handoff may be running in the old pane, so its reservation is kept.
+  if (reservation && (options.dryRun || (!launch.ok && !unconfirmedInPlace))) {
+    reservations.release(reservation.id);
+  }
+  // The pane lock held by an in-place handover is released once the new session that owns
+  // the pane is recorded, or if recording it throws.
+  try {
+    if (sessionId && deps.sessions) {
+      const startedAt = new Date().toISOString();
+      const affinityInput = {
         provider: selected.account.provider,
         modelId: selected.model.id,
         effort: decision.effort,
         agent: selected.model.agent,
-        promptPrefixHash: key.slice(key.lastIndexOf(":") + 1),
-      },
-      reservations: reservation
-        ? [
-            {
-              id: reservation.id,
-              accountId: reservation.accountId,
-              ratio: reservation.ratio,
-              createdAt: startedAt,
-              expiresAt: new Date(reservation.expiresAt).toISOString(),
-            },
-          ]
-        : [],
-      handoffs: [handoff],
-      paneId: launch.paneId,
-      workspace,
-      createdAt: startedAt,
-      updatedAt: startedAt,
-    });
-    deps.sessions.save(session);
+        promptPrefix: task.slice(0, 80),
+      };
+      const key = cacheAffinityKey(affinityInput);
+      const session = RouterSessionSchema.parse({
+        id: sessionId,
+        previousSessionId: previous?.id,
+        task: redactCollectorText(task),
+        phase: decision.phase,
+        route: {
+          accountId: selected.account.id,
+          modelId: selected.model.id,
+          agent: selected.model.agent,
+          launchName: selected.model.launchName,
+          effort: decision.effort,
+          reason: decision.reason,
+          // An unconfirmed handoff most likely reached the pane, which is live either way: the
+          // agent there must be able to use this session.
+          status: launch.ok || unconfirmedInPlace ? "launched" : "launch-failed",
+          launchToken: launch.launchToken,
+          agentName: launch.agentName,
+          error: launch.ok ? undefined : redactCollectorText(launch.error ?? "launch failed"),
+        },
+        cacheAffinity: {
+          provider: selected.account.provider,
+          modelId: selected.model.id,
+          effort: decision.effort,
+          agent: selected.model.agent,
+          promptPrefixHash: key.slice(key.lastIndexOf(":") + 1),
+        },
+        reservations: reservation
+          ? [
+              {
+                id: reservation.id,
+                accountId: reservation.accountId,
+                ratio: reservation.ratio,
+                createdAt: startedAt,
+                expiresAt: new Date(reservation.expiresAt).toISOString(),
+              },
+            ]
+          : [],
+        handoffs: [handoff],
+        paneId: launch.paneId,
+        workspace,
+        topTierUnlocked,
+        ...(continuedInPlace || unconfirmedInPlace
+          ? {
+              continuation: "in-place",
+              liveEffort:
+                inPlaceOutcome?.switched?.status === "failed" ? undefined : decision.effort,
+            }
+          : {}),
+        // A refused switch marks the chain so later phases open a new pane without retrying.
+        ...(inPlaceOutcome?.ok === false &&
+        inPlaceOutcome.switched?.status === "failed" &&
+        inPlaceOutcome.switched.unsupported
+          ? { liveSwitchUnsupported: true }
+          : {}),
+        createdAt: startedAt,
+        updatedAt: startedAt,
+      });
+      deps.sessions.save(session);
+      const switched = inPlaceOutcome?.switched;
+      if (switched && deps.effortChanges && previous) {
+        // The switch happened in the previous session's pane. When the handover then fell
+        // back to a new pane, that pane (and its session) is the one now at the new level.
+        const paneOwner = continuedInPlace || unconfirmedInPlace ? sessionId : previous.id;
+        if (paneOwner === previous.id) {
+          deps.sessions.save({
+            // Fresh: the previous session may have changed while this run was routing.
+            ...(deps.sessions.get(previous.id) ?? previous),
+            ...(switched.status === "applied" ? { liveEffort: switched.to } : {}),
+            // A no-change read the pane's real level, which may correct a stale record.
+            ...(switched.status === "no-change" ? { liveEffort: switched.from } : {}),
+            ...(switched.status === "failed" && switched.unsupported
+              ? { liveSwitchUnsupported: true }
+              : {}),
+            updatedAt: startedAt,
+          });
+        }
+        deps.effortChanges.record({
+          sessionId: paneOwner,
+          source: "phase-boundary",
+          from: switched.from,
+          to: switched.to,
+          status: switched.status,
+          reason: switched.status === "applied" ? "switched" : switched.reason,
+          turnBreak: switched.status === "applied" && switched.turnBreak,
+          createdAt: startedAt,
+        });
+      }
+    }
+  } finally {
+    inPlaceOutcome?.release?.();
   }
   const snapshot = deps.usage[selected.account.id];
   const card = formatDecisionCard({
@@ -536,6 +678,13 @@ export async function executeRun(
       ? `${previous.id} (${previous.phase} -> ${decision.phase})`
       : undefined,
     workspace: intent ? describeWorkspace(intent, options.dryRun, workspace) : undefined,
+    continuation: describeContinuation({
+      enabled: liveEffortReady,
+      previous: Boolean(previous),
+      inPlace,
+      outcome: inPlaceOutcome,
+      dryRun: options.dryRun,
+    }),
     sharedActivity:
       ownerMessages.get(selected.account.id) ??
       (selected.account.ownership === "shared" && !deps.activityClient
@@ -581,6 +730,38 @@ export async function executeRun(
       paneId: launch.paneId,
       agentName: launch.agentName,
       sessionId,
+      ...(liveEffortReady && previous
+        ? {
+            continuation:
+              (continuedInPlace || unconfirmedInPlace) && inPlace.ok
+                ? {
+                    mode: "in-place",
+                    // What the switcher observed in the pane, which the record may lag.
+                    from: inPlaceOutcome?.switched?.from ?? inPlace.plan.from,
+                    to: decision.effort,
+                    turnBreak: inPlaceOutcome?.ok === true && inPlaceOutcome.turnBreak,
+                    ...(unconfirmedInPlace ? { unconfirmed: true } : {}),
+                    // From inside that pane the agent continues on its own, with this handoff.
+                    ...(inPlace.plan.callerIsTarget ? { self: true, handoff: handoffPrompt } : {}),
+                  }
+                : options.dryRun && inPlace.ok
+                  ? {
+                      mode: "in-place",
+                      from: inPlace.plan.from,
+                      to: decision.effort,
+                      turnBreak: false,
+                      dryRun: true,
+                    }
+                  : {
+                      mode: "new-pane",
+                      reason: inPlace.ok
+                        ? inPlaceOutcome?.ok === false
+                          ? inPlaceOutcome.reason
+                          : undefined
+                        : inPlace.reason,
+                    },
+          }
+        : {}),
       enrichment: enrichmentJson(resolution),
       ...(intent
         ? {
@@ -592,6 +773,45 @@ export async function executeRun(
         : {}),
     },
   };
+}
+
+function describeContinuation(input: {
+  enabled: boolean;
+  previous: boolean;
+  inPlace: ReturnType<typeof planInPlace>;
+  outcome: InPlaceOutcome | undefined;
+  dryRun: boolean;
+}): string | undefined {
+  if (!input.enabled || !input.previous) return undefined;
+  if (!input.inPlace.ok) return `new pane (${input.inPlace.reason})`;
+  const { plan } = input.inPlace;
+  // The level the switcher saw in the pane when it ran; the record otherwise.
+  const from = input.outcome?.switched?.from ?? plan.from;
+  const effort = from === plan.to ? `effort ${plan.to} unchanged` : `effort ${from} -> ${plan.to}`;
+  if (input.dryRun) return `would continue in place (pane ${plan.paneId}), ${effort}`;
+  if (input.outcome?.ok) return `in place (pane ${plan.paneId}), ${effort}`;
+  if (input.outcome?.noFallback) {
+    return `in place (pane ${plan.paneId}), ${effort}; handoff sent but not confirmed`;
+  }
+  return `new pane (in-place continuation failed: ${input.outcome?.reason ?? "unknown"})`;
+}
+
+function inPlaceMessage(input: {
+  plan: { paneId: string; agentName: string; to: string; callerIsTarget: boolean };
+  phase: string;
+  turnBreak: boolean;
+  handoffPrompt: string;
+}): string {
+  if (!input.plan.callerIsTarget) {
+    return `Sent the next phase to ${input.plan.agentName} in pane ${input.plan.paneId} at effort ${input.plan.to}.`;
+  }
+  if (input.turnBreak) {
+    return (
+      `Next phase queued in this session at effort ${input.plan.to}; it starts when your turn ends.\n` +
+      "End your turn now with a one-line status."
+    );
+  }
+  return `Continue in this session: phase ${input.phase}, effort now ${input.plan.to}.\n\n${input.handoffPrompt}`;
 }
 
 function enrichmentJson(resolution: Resolution): Record<string, unknown> {

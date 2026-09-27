@@ -127,3 +127,81 @@ export function createHerdrClient(runCommand: RunCommand): HerdrClient {
     },
   };
 }
+
+/** What `herdr agent get` reports about a running agent. */
+export interface HerdrAgentInfo {
+  agent: string;
+  status: HerdrAgentState;
+  paneId: string;
+}
+
+/** Controls an already-running agent pane; used by in-place effort switching. */
+export interface HerdrPaneClient {
+  getAgent(target: string): Promise<HerdrAgentInfo | undefined>;
+  readPane(
+    paneId: string,
+    options: { source: "visible" | "recent"; lines: number; ansi?: boolean },
+  ): Promise<string | undefined>;
+  sendKeys(paneId: string, keys: readonly string[]): Promise<CommandResult>;
+  sendText(paneId: string, text: string): Promise<CommandResult>;
+}
+
+const AGENT_STATES = new Set<HerdrAgentState>(["idle", "working", "blocked", "done", "unknown"]);
+
+export function parseHerdrAgentInfo(stdout: string): HerdrAgentInfo | undefined {
+  try {
+    const data = JSON.parse(stdout.trim()) as {
+      result?: {
+        agent?: {
+          agent?: unknown;
+          agent_status?: unknown;
+          pane_id?: unknown;
+        };
+      };
+    };
+    const agent = data.result?.agent;
+    if (!agent || typeof agent.agent !== "string" || typeof agent.pane_id !== "string") {
+      return undefined;
+    }
+    const status = AGENT_STATES.has(agent.agent_status as HerdrAgentState)
+      ? (agent.agent_status as HerdrAgentState)
+      : "unknown";
+    return {
+      agent: agent.agent,
+      status,
+      paneId: agent.pane_id,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export function createHerdrPaneClient(runCommand: RunCommand): HerdrPaneClient {
+  return {
+    async getAgent(target) {
+      const result = await runCommand(["herdr", "agent", "get", target]);
+      return result.ok ? parseHerdrAgentInfo(result.stdout) : undefined;
+    },
+    async readPane(paneId, options) {
+      const result = await runCommand([
+        "herdr",
+        "pane",
+        "read",
+        paneId,
+        "--source",
+        options.source,
+        "--lines",
+        String(options.lines),
+        "--format",
+        options.ansi ? "ansi" : "text",
+      ]);
+      return result.ok ? result.stdout : undefined;
+    },
+    sendKeys(paneId, keys) {
+      return runCommand(["herdr", "pane", "send-keys", paneId, ...keys]);
+    },
+    sendText(paneId, text) {
+      return runCommand(["herdr", "pane", "send-text", paneId, text]);
+    },
+  };
+}

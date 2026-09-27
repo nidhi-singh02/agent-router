@@ -183,9 +183,14 @@ describe("createDefaultRunDeps", () => {
       },
       { createProcessAdapter, createHerdr, collectorsForAccount: () => idleCollectors },
     );
-    expect(createProcessAdapter).toHaveBeenCalledTimes(1);
+    // One adapter for launches, and one with a short per-call limit for pane control.
+    expect(createProcessAdapter).toHaveBeenCalledTimes(2);
     expect(createProcessAdapter).toHaveBeenCalledWith({
       env: expect.objectContaining({ HERDR_ENV: "1" }),
+    });
+    expect(createProcessAdapter).toHaveBeenCalledWith({
+      env: expect.objectContaining({ HERDR_ENV: "1" }),
+      timeoutMs: 5_000,
     });
     const childEnv = createProcessAdapter.mock.calls[0]?.[0]?.env;
     expect(childEnv?.TYPESAFE_API_KEY).toBeUndefined();
