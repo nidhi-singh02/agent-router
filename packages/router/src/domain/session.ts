@@ -85,6 +85,17 @@ export const RouterSessionSchema = z.object({
   handoffs: z.array(HandoffSchema),
   paneId: z.string().min(1).optional(),
   workspace: SessionWorkspaceSchema.optional(),
+  /**
+   * Whether `max`/`ultra` may be chosen in this session chain. Set once from the root
+   * `router run` task and inherited by continued sessions; a continued task never sets it.
+   */
+  topTierUnlocked: z.boolean().optional(),
+  /** Set when this phase continued in the previous session's pane instead of a new one. */
+  continuation: z.literal("in-place").optional(),
+  /** The pane's effort after in-place switches; absent until the first switch. */
+  liveEffort: ReasoningEffortSchema.optional(),
+  /** Set when the agent refused an in-place switch (for example a cache-warning dialog). */
+  liveSwitchUnsupported: z.boolean().optional(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
