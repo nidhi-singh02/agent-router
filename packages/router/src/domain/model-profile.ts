@@ -2,7 +2,15 @@ import { z } from "zod";
 import { AgentIdSchema, ModelIdSchema, ProviderIdSchema } from "./ids.js";
 import { RatioSchema } from "./account.js";
 
-export const ReasoningEffortSchema = z.enum(["none", "low", "medium", "high", "ultra"]);
+export const ReasoningEffortSchema = z.enum([
+  "none",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+]);
 
 export const ModelCapabilitiesSchema = z.object({
   planning: RatioSchema,

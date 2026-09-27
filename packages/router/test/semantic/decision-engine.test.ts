@@ -81,7 +81,7 @@ describe("decision engine", () => {
     const decision = await decideRoute({
       task: "Implement the approved session repository plan.",
       candidates: eligible,
-      userRequestedUltra: false,
+      topTierUnlocked: false,
       client,
     });
 
@@ -113,7 +113,7 @@ describe("decision engine", () => {
     const decision = await decideRoute({
       task: "Implement the approved plan.",
       candidates: eligible,
-      userRequestedUltra: false,
+      topTierUnlocked: false,
       client,
     });
 
@@ -143,7 +143,7 @@ describe("decision engine", () => {
     const decision = await decideRoute({
       task: "Debug a failing production issue.",
       candidates: eligible,
-      userRequestedUltra: false,
+      topTierUnlocked: false,
       client,
     });
     expect(decision.status).toBe("selected");
@@ -175,7 +175,7 @@ describe("decision engine", () => {
     await decideRoute({
       task: "Implement the approved plan.",
       candidates: eligible,
-      userRequestedUltra: false,
+      topTierUnlocked: false,
       client,
     });
     expect(client.calls.length).toBeGreaterThanOrEqual(2);
@@ -205,7 +205,7 @@ describe("decision engine", () => {
     await decideRoute({
       task: "Plan the architecture.",
       candidates: eligible,
-      userRequestedUltra: false,
+      topTierUnlocked: false,
       client,
     });
     expect(client.calls.map((call) => Object.keys(call.questions))).toEqual([
@@ -233,7 +233,7 @@ describe("decision engine", () => {
       decideRoute({
         task: "Implement the approved plan.",
         candidates: eligible,
-        userRequestedUltra: false,
+        topTierUnlocked: false,
         client: rankingFail,
       }),
     ).resolves.toMatchObject({ status: "typesafe-unavailable" });
@@ -258,7 +258,7 @@ describe("decision engine", () => {
       decideRoute({
         task: "Implement the approved plan.",
         candidates: eligible,
-        userRequestedUltra: false,
+        topTierUnlocked: false,
         client: effortFail,
       }),
     ).resolves.toMatchObject({ status: "typesafe-unavailable" });
@@ -287,7 +287,7 @@ describe("decision engine", () => {
     const decision = await decideRoute({
       task: "Tell the team on Telegram after the cookie banner copy is approved.",
       candidates: eligible,
-      userRequestedUltra: false,
+      topTierUnlocked: false,
       client,
     });
     expect(decision.status).toBe("selected");
@@ -311,7 +311,7 @@ describe("decision engine", () => {
     });
     const decision = await decideRoute({
       task: "Keep implementing the plan.",
-      userRequestedUltra: false,
+      topTierUnlocked: false,
       client,
       candidates: [grokCandidate],
       previousRoute: {
@@ -339,7 +339,7 @@ describe("decision engine", () => {
     });
     const decision = await decideRoute({
       task: "Implement the approved plan.",
-      userRequestedUltra: false,
+      topTierUnlocked: false,
       client,
       candidates: [grokCandidate],
       previousRoute: {
@@ -365,7 +365,7 @@ describe("decision engine", () => {
     });
     const decision = await decideRoute({
       task: "Keep implementing the plan.",
-      userRequestedUltra: false,
+      topTierUnlocked: false,
       client,
       candidates: [grokCandidate],
       previousRoute: {
@@ -387,7 +387,7 @@ describe("decision engine", () => {
     const result = await decideRoute({
       task: "refactor using key AKIAIOSFODNN7EXAMPLE now",
       candidates: [grokCandidate],
-      userRequestedUltra: false,
+      topTierUnlocked: false,
       client,
     });
     expect(result.status).toBe("unsafe-state");
