@@ -155,22 +155,23 @@ The links follow whatever branch is checked out in this repo.
 Defined in `packages/router/config/models.json`. Add an ID to an account's `enabledModels` to
 use it.
 
-| Model ID                  | Agent       | Starts as                                                        | Efforts                  | Quota pool |
-| ------------------------- | ----------- | ---------------------------------------------------------------- | ------------------------ | ---------- |
-| `cursor:grok-4.6`         | Cursor      | `agent --model cursor-grok-4.6-<effort>`                         | low, medium, high        | spend      |
-| `cursor:grok-4.5`         | Cursor      | `agent --model cursor-grok-4.5-high`                             | high                     | spend      |
-| `cursor:composer-2.5`     | Cursor      | `agent --model composer-2.5`                                     | none                     | auto       |
-| `anthropic:claude-sonnet` | Claude Code | `claude --model sonnet --effort <effort>`                        | low, medium, high        |            |
-| `anthropic:claude-opus`   | Claude Code | `claude --model opus --effort <effort>`                          | low, medium, high        |            |
-| `openai:gpt-6-astra`      | Codex       | `codex --model gpt-6-astra -c model_reasoning_effort="<effort>"` | low, medium, high, ultra |            |
-| `openai:gpt-5.6-sol`      | Codex       | `codex --model gpt-5.6-sol …`                                    | low, medium, high, ultra |            |
-| `openai:gpt-5.6-terra`    | Codex       | `codex --model gpt-5.6-terra …`                                  | low, medium, high, ultra |            |
-| `openai:gpt-5.6-luna`     | Codex       | `codex --model gpt-5.6-luna …`                                   | low, medium, high        |            |
-| `openai:gpt-5.5`          | Codex       | `codex --model gpt-5.5 …`                                        | low, medium, high        |            |
-| `openai:opencode`         | OpenCode    | `opencode --model openai`                                        | low, medium, high        |            |
+| Model ID                  | Agent       | Starts as                                                        | Efforts                              | Quota pool |
+| ------------------------- | ----------- | ---------------------------------------------------------------- | ------------------------------------ | ---------- |
+| `cursor:grok-4.6`         | Cursor      | `agent --model cursor-grok-4.6-<effort>`                         | low, medium, high                    | spend      |
+| `cursor:grok-4.5`         | Cursor      | `agent --model cursor-grok-4.5-high`                             | high                                 | spend      |
+| `cursor:composer-2.5`     | Cursor      | `agent --model composer-2.5`                                     | none                                 | auto       |
+| `anthropic:claude-sonnet` | Claude Code | `claude --model sonnet --effort <effort>`                        | low, medium, high                    |            |
+| `anthropic:claude-opus`   | Claude Code | `claude --model opus --effort <effort>`                          | low, medium, high, xhigh, max        |            |
+| `openai:gpt-6-astra`      | Codex       | `codex --model gpt-6-astra -c model_reasoning_effort="<effort>"` | low, medium, high, xhigh, max, ultra |            |
+| `openai:gpt-5.6-sol`      | Codex       | `codex --model gpt-5.6-sol …`                                    | low, medium, high, ultra             |            |
+| `openai:gpt-5.6-terra`    | Codex       | `codex --model gpt-5.6-terra …`                                  | low, medium, high, ultra             |            |
+| `openai:gpt-5.6-luna`     | Codex       | `codex --model gpt-5.6-luna …`                                   | low, medium, high                    |            |
+| `openai:gpt-5.5`          | Codex       | `codex --model gpt-5.5 …`                                        | low, medium, high                    |            |
+| `openai:opencode`         | OpenCode    | `opencode --model openai`                                        | low, medium, high                    |            |
 
-TypeSafe picks the effort from the model's list. `ultra` is only offered when your task text
-contains the word "ultra". Capability, cost, and latency numbers in `models.json` are
+TypeSafe picks the effort from the model's list. `max` and `ultra` are only offered when the
+task you started the chain with (`router run` without `--session`) contains the word
+"ultra"; continued sessions inherit that, and a continued task cannot unlock them. Capability, cost, and latency numbers in `models.json` are
 estimates you can adjust.
 
 ## Everyday use
@@ -358,10 +359,63 @@ git worktree remove "<path>"      # add --force to discard uncommitted work
 git branch -d router/wt-...       # or merge it first
 ```
 
+## Live effort switching
+
+Opus 5.5 and GPT 6 Astra can change reasoning effort inside a running session without
+losing the conversation. With `"liveEffort": { "enabled": true }` in `config.json`, the
+router uses that in two places:
+
+- **Between phases.** When `router run --session <id>` picks the same account and model as
+  the previous session, the next phase continues in the same pane at the new effort instead
+  of a new pane. From inside that pane the agent is told to continue; from anywhere else the
+  router waits for the pane to be idle and sends the task. The card shows
+  `Continuation: in place (pane …), effort medium -> high`.
+- **Within a phase.** An agent runs
+  `router effort --session <id> "<sub-step>" [--step-kind debug] [--consecutive-failures 3] …`
+  when a sub-step is markedly harder or easier. TypeSafe picks the level from the sub-step,
+  the phase, the current level, and the bucketed signals; it never sees the conversation.
+
+You can switch by hand with `router effort <id> <level>`. That manual form is refused when
+run from inside an agent (Claude Code or Codex); an agent can only use the `--session` form,
+only for its own pane, and with a sub-step of one plain-text line up to 500 characters.
+
+How each agent is switched:
+
+| Agent                  | How                                                                                   | Takes effect                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Claude Code (Opus 5.5) | `/effort` slider, then `s` ("this session only"); your saved default is never changed | Next request, even mid-turn                                                     |
+| Codex (Astra)          | `Alt+.` / `Alt+,` steps; not saved                                                    | Next turn: the router queues the continuation (Tab) and the agent ends its turn |
+
+Rules:
+
+- Switches in place stay between `low` and `xhigh`. `max` and `ultra` start only with a new
+  pane, on both models.
+- An agent switch needs TypeSafe confidence of at least 0.6, at least 5 minutes since the
+  previous one, and at most 8 per session. Raising effort re-checks the account's quota and
+  shared reserve; lowering is always allowed.
+- The router never types over text in the input box, never confirms a dialog, and confirms
+  every switch on screen. If Claude shows its "Change effort level?" cache warning (Bedrock
+  and gateways), the router picks "No, go back" and stops switching that pane.
+- Codex Plan mode, a blocked pane, or a pane that changed stops the switch. Between phases,
+  any failure falls back to a new pane, except when the handoff may already have reached the
+  old pane: then no new pane is opened, the run exits 1, and the card names the pane to check.
+- A pane at `max` or `ultra` continues in place at that level, but an agent's sub-step
+  switches are skipped there (`top-tier-held`) so your choice is not lowered.
+- After an in-place continuation, only the newest session id for the pane is accepted
+  (`superseded-session` otherwise). `router effort` needs Herdr (`not-in-herdr` otherwise).
+
+`router effort` exits 0 when it switched, 4 when nothing changed (for example `cooldown`,
+`low-confidence`, `quota`, or `disabled`), 5 when the switch failed, 2 when the session is
+unknown or has no route, and 1 on a usage error. `router session <id>` lists that session's
+effort history; after an in-place continuation, earlier switches in the same pane belong to
+the previous session.
+
 ## Commands
 
 ```sh
 router run "<task>" [--dry-run] [--usage] [--no-enrich] [--session <id>] [--worktree] [--json]
+router effort --session <id> "<sub-step>" [signal flags] [--json]
+router effort <id> <level> [--json]
 router status [--usage]
 router session [id] [--list] [--limit <n>] [--json]
 router accounts
@@ -369,7 +423,14 @@ router usage refresh [--source local-session|official-cli|browser] [--dry-run]
 ```
 
 `--json` prints machine-readable output for plugins, including `sessionId`, `agentName`, and
-`paneId`, plus `workspace` for `--worktree` runs and continued isolated sessions. When a task names a pull request, `--no-enrich` skips resolving its size through
+`paneId`, plus `workspace` for `--worktree` runs and continued isolated sessions. With live
+effort switching on, `router run --session --json` adds `continuation`: `{mode: "in-place",
+from, to, turnBreak}` (plus `dryRun: true` on a dry run) or `{mode: "new-pane", reason}`.
+`router session <id> --json` includes an `effortChanges` array. `router effort --json` prints
+`{ok, sessionId, from, to, status, reason, turnBreak}`, where `ok` is true only when the pane
+switched; for exit 2 it prints `{ok: false, sessionId, status: "failed", reason, error}` with
+`reason` `unknown-session` or `no-route`. When the calling agent continues in its own pane, `continuation` also carries
+`self: true` and the `handoff` text; an unconfirmed handoff adds `unconfirmed: true`. When a task names a pull request, `--no-enrich` skips resolving its size through
 GitHub. Set `enrichment.enabled` to `false` in `config.json` to disable that resolution by
 default. `router usage refresh` defaults to local-session file reads; `--dry-run` prints facts
 and does not persist. Without `--dry-run` it writes snapshots to SQLite.
