@@ -4,10 +4,15 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { Command, CommanderError } from "commander";
 import { executeRun, type RunDeps } from "./commands/run.js";
+import { executeEffort, type EffortDeps, type EffortRequest } from "./commands/effort.js";
+import { ReasoningEffortSchema } from "./domain/model-profile.js";
+import { LIVE_LEVELS, runsInsideAgent } from "./live-effort/levels.js";
+import { SignalsSchema } from "./live-effort/signals.js";
 import { formatStatus } from "./commands/status.js";
 import { formatSession, formatSessionList } from "./commands/session.js";
 import { openDatabase } from "./store/database.js";
 import { SessionRepository } from "./store/session-repository.js";
+import { EffortChangeRepository } from "./store/effort-change-repository.js";
 import { UsageRepository } from "./store/usage-repository.js";
 
 const { version: ROUTER_VERSION } = createRequire(import.meta.url)("../package.json") as {
@@ -38,6 +43,46 @@ export interface CliOptions {
   runDeps?: RunDeps;
   collectUsage?: (account: Account) => Promise<UsageSnapshot>;
   createRunDeps?: typeof createDefaultRunDeps;
+  effort?: typeof executeEffort;
+  effortDeps?: EffortDeps;
+}
+
+function effortDepsFrom(deps: RunDeps): EffortDeps {
+  if (!deps.sessions || !deps.effortChanges) {
+    throw new Error("router effort needs the router state database");
+  }
+  return {
+    sessions: deps.sessions,
+    effortChanges: deps.effortChanges,
+    pane: deps.herdrPane,
+    client: deps.client,
+    accounts: deps.accounts,
+    models: deps.models,
+    usage: deps.usage,
+    reservations: deps.reservations,
+    env: deps.callerEnv ?? deps.env,
+    liveEffortEnabled: deps.liveEffortEnabled ?? false,
+  };
+}
+
+const MAX_SUB_STEP_LENGTH = 500;
+
+/** A sub-step is one line of plain text: it may be typed into a TUI as a queued message. */
+function checkedSubStep(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(text)) {
+    throw new Error("The sub-step must be one line of plain text, without control characters.");
+  }
+  if (text.trim() === "" || text.length > MAX_SUB_STEP_LENGTH) {
+    throw new Error(`The sub-step must be 1 to ${MAX_SUB_STEP_LENGTH} characters.`);
+  }
+  return text;
+}
+
+function optionalInt(value: string | undefined, name: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (!/^\d+$/.test(value)) throw new Error(`--${name} must be a whole number`);
+  return Number.parseInt(value, 10);
 }
 
 export function createProgram(options: CliOptions = {}): Command & { exitCode?: number } {
@@ -117,6 +162,101 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
       },
     );
   program
+    .command("effort")
+    .description(
+      "Change the reasoning effort of a running Opus 5.5 or GPT 6 Astra pane. " +
+        'Agent: router effort --session <id> "<sub-step>" [signals]. User: router effort <id> <level>.',
+    )
+    .argument("<first>", "The sub-step (with --session), or the session id")
+    .argument("[level]", "The level to switch to (manual override, without --session)")
+    .option(
+      "--session <id>",
+      "Session whose pane to switch; TypeSafe picks the level for the sub-step",
+    )
+    .option("--step-kind <kind>", "explore, edit, debug, verify, or refactor")
+    .option("--consecutive-failures <n>", "Failed attempts in a row at this sub-step")
+    .option("--tests-failing", "Tests are currently failing", false)
+    .option("--files-touched <n>", "Files changed so far in this phase")
+    .option("--diff-lines <n>", "Lines changed so far in this phase")
+    .option("--blocked", "The agent is stuck on this sub-step", false)
+    .option("--json", "Emit JSON for plugins", false)
+    .action(
+      async (
+        first: string,
+        level: string | undefined,
+        flags: {
+          session?: string;
+          stepKind?: string;
+          consecutiveFailures?: string;
+          testsFailing?: boolean;
+          filesTouched?: string;
+          diffLines?: string;
+          blocked?: boolean;
+          json?: boolean;
+        },
+      ) => {
+        try {
+          let sessionId: string;
+          let request: EffortRequest;
+          if (flags.session) {
+            if (level !== undefined) {
+              throw new Error("Pass either --session <id> with a sub-step, or <id> <level>.");
+            }
+            sessionId = flags.session;
+            request = {
+              kind: "agent",
+              subStep: checkedSubStep(first),
+              signals: SignalsSchema.parse({
+                ...(flags.stepKind ? { stepKind: flags.stepKind } : {}),
+                ...(flags.consecutiveFailures !== undefined
+                  ? {
+                      consecutiveFailures: optionalInt(
+                        flags.consecutiveFailures,
+                        "consecutive-failures",
+                      ),
+                    }
+                  : {}),
+                ...(flags.testsFailing ? { testsFailing: true } : {}),
+                ...(flags.filesTouched !== undefined
+                  ? { filesTouched: optionalInt(flags.filesTouched, "files-touched") }
+                  : {}),
+                ...(flags.diffLines !== undefined
+                  ? { diffLines: optionalInt(flags.diffLines, "diff-lines") }
+                  : {}),
+                ...(flags.blocked ? { blocked: true } : {}),
+              }),
+            };
+          } else {
+            if (runsInsideAgent(env)) {
+              throw new Error(
+                "The manual form is for you, not an agent: run it yourself in a terminal pane that is not running an agent. " +
+                  'Agents use router effort --session <id> "<sub-step>".',
+              );
+            }
+            const parsed = ReasoningEffortSchema.safeParse(level);
+            if (!parsed.success) {
+              throw new Error(
+                `Pass a level: router effort <id> <${LIVE_LEVELS.join("|")}>, or use --session <id> "<sub-step>".`,
+              );
+            }
+            sessionId = first;
+            request = { kind: "manual", level: parsed.data };
+          }
+          const deps =
+            options.effortDeps ??
+            effortDepsFrom(
+              options.runDeps ?? (await (options.createRunDeps ?? createDefaultRunDeps)(env)),
+            );
+          const result = await (options.effort ?? executeEffort)(sessionId, request, deps);
+          stdout.write(`${flags.json ? JSON.stringify(result.json) : result.output}\n`);
+          program.exitCode = result.code;
+        } catch (error) {
+          stderr.write(`${formatError(error)}\n`);
+          program.exitCode = 1;
+        }
+      },
+    );
+  program
     .command("status")
     .option("--usage", "Show each account's quota (slower)", false)
     .action(async (flags: { usage?: boolean }) => {
@@ -173,7 +313,14 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
           }
           return;
         }
-        stdout.write(`${flags.json ? JSON.stringify(session) : formatSession(session)}\n`);
+        const effortChanges = new EffortChangeRepository(db).listForSession(session.id);
+        stdout.write(
+          `${
+            flags.json
+              ? JSON.stringify({ ...session, effortChanges })
+              : formatSession(session, effortChanges)
+          }\n`,
+        );
       } catch (error) {
         stderr.write(`${formatError(error)}\n`);
         program.exitCode = 1;

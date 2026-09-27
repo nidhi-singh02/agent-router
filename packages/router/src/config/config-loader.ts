@@ -22,6 +22,9 @@ export interface AppConfig {
   enrichment?: {
     enabled: boolean;
   };
+  liveEffort?: {
+    enabled: boolean;
+  };
 }
 
 export function resolveHome(env: NodeJS.Dict<string> = process.env): string {
@@ -69,6 +72,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
       : file.coordinator,
     typesafe: file.typesafe,
     enrichment: file.enrichment,
+    liveEffort: file.liveEffort,
   };
 }
 

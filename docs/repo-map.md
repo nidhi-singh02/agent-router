@@ -1,6 +1,6 @@
 # Repo Map: agent-router
 
-npm workspaces monorepo (TypeScript, Node 20+, vitest). ~4.4k LOC in `packages/router/src`.
+npm workspaces monorepo (TypeScript, Node 20+, vitest). ~7.3k LOC in `packages/router/src`.
 
 ## Packages
 
@@ -11,7 +11,7 @@ npm workspaces monorepo (TypeScript, Node 20+, vitest). ~4.4k LOC in `packages/r
 | `packages/hermes-heartbeat` | Client lib: request wrapper + fingerprinting, heartbeats to coordinator                                           |
 | `skills/model-router`       | Agent skill wrapping the CLI (SKILL.md, CLI reference, prompt tests)                                              |
 | `herdr-plugin/`             | Shell glue for Herdr: route, resume, sessions, status, usage-refresh                                              |
-| `docs/`                     | configuration, operations, privacy, provider-support, superpowers specs/plans                                     |
+| `docs/`                     | configuration, operations, privacy, provider-support, validation checklists, superpowers specs/plans              |
 
 ## `router run` flow
 
@@ -46,18 +46,19 @@ Pipeline: load config → enrich task refs → collect quota → deterministic p
 
 ## Module index (`packages/router/src`)
 
-| Dir                                                                   | Key files                                                  | Purpose                                            |
-| --------------------------------------------------------------------- | ---------------------------------------------------------- | -------------------------------------------------- |
-| `commands/`                                                           | run (399), runtime (212), session, status, usage, accounts | CLI subcommands                                    |
-| `semantic/`                                                           | decision-engine (237), typesafe-client + scorers           | LLM-assisted ranking; no fallback if TypeSafe down |
-| `enrich/`                                                             | resolver (279), buckets                                    | Resolve file/ref context in task text              |
-| `collectors/`                                                         | registry, collector-chain, command-runner, per-provider    | Read usage/quota from agent CLIs                   |
-| `policy/`                                                             | eligibility, quota, cost-estimator, revalidate             | Hard rules before ranking                          |
-| `launch/`                                                             | herdr-launcher (185), herdr-client, agent-command          | Spawn agent in pane                                |
-| `store/`                                                              | database + repositories                                    | Local persistence                                  |
-| `domain/`                                                             | schemas, usage, session, account, model-profile            | Types + zod-style schemas                          |
-| `config/`                                                             | config-schema, config-loader                               | `config.example.json`, `.env`                      |
-| `catalog/`, `activity/`, `reservations/`, `handoff/`, `presentation/` |                                                            | Supporting services                                |
+| Dir                                                                   | Key files                                                                | Purpose                                                |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------ |
+| `commands/`                                                           | run (859), effort (421), runtime (245), session, status, usage, accounts | CLI subcommands                                        |
+| `semantic/`                                                           | decision-engine (237), typesafe-client + scorers                         | LLM-assisted ranking; no fallback if TypeSafe down     |
+| `enrich/`                                                             | resolver (279), buckets                                                  | Resolve file/ref context in task text                  |
+| `collectors/`                                                         | registry, collector-chain, command-runner, per-provider                  | Read usage/quota from agent CLIs                       |
+| `policy/`                                                             | eligibility, quota, cost-estimator, revalidate                           | Hard rules before ranking                              |
+| `launch/`                                                             | herdr-launcher (185), herdr-client, agent-command                        | Spawn agent in pane                                    |
+| `live-effort/`                                                        | switcher (436), in-place (233), pane-text (228), levels, signals         | Change effort in a running Opus 5.5 / GPT 6 Astra pane |
+| `store/`                                                              | database + repositories (incl. effort-change-repository), migrations     | Local persistence                                      |
+| `domain/`                                                             | schemas, usage, session, account, model-profile                          | Types + zod-style schemas                              |
+| `config/`                                                             | config-schema, config-loader                                             | `config.example.json`, `.env`                          |
+| `catalog/`, `activity/`, `reservations/`, `handoff/`, `presentation/` |                                                                          | Supporting services                                    |
 
 Tests mirror `src/` in `packages/router/test/` (+ `e2e/`, `fixtures/`). Routing evals: `packages/router/evals/routing-cases.json`. Model catalog: `packages/router/config/models.json`.
 
@@ -73,10 +74,11 @@ Cross-package coupling is minimal (coordinator/hermes-heartbeat → router: 2 ed
 
 ## Hotspots (review first)
 
-1. `commands/run.ts` (399 LOC): orchestrates everything; biggest file, most fan-out (~15 imports). Split candidate.
+1. `commands/run.ts` (859 LOC): orchestrates everything; biggest file, most fan-out (~15 imports). Split candidate.
 2. `enrich/resolver.ts` (279): parses task text and file refs, so check for path-traversal/privacy.
 3. `semantic/decision-engine.ts` (237): hard dependency on TypeSafe; no offline fallback.
-4. `commands/runtime.ts` (212) + `domain/schemas.ts`: second- and third-most-connected; changes ripple widely.
-5. `cli.ts` (253): wires store + collectors directly; the composition root.
+4. `commands/runtime.ts` (245) + `domain/schemas.ts`: second- and third-most-connected; changes ripple widely.
+5. `cli.ts` (409): wires store + collectors directly; the composition root.
 6. `coordinator/src/auth.ts` + `leases.ts`: network-facing, security-sensitive.
 7. `launch/herdr-launcher.ts` (185): shell/process spawning.
+8. `live-effort/switcher.ts` (436) + `pane-text.ts` (228): types keystrokes into a live agent pane and parses its TUI text; must fail closed on unrecognized screens.

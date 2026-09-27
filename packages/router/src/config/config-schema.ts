@@ -60,6 +60,8 @@ export const ConfigFileSchema = z.object({
     })
     .optional(),
   enrichment: z.object({ enabled: z.boolean().default(true) }).optional(),
+  /** In-place effort switching for Opus 5.5 and GPT 6 Astra panes. Opt-in. */
+  liveEffort: z.object({ enabled: z.boolean().default(false) }).optional(),
 });
 
 export const ModelCatalogSchema = z.object({

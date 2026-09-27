@@ -11,6 +11,19 @@ and released under a single tag.
 
 ### Added
 
+- Live effort switching for Opus 5.5 and GPT 6 Astra, opt-in with `liveEffort.enabled`.
+  `router run --session <id>` continues the next phase in the previous pane when TypeSafe
+  picks the same account and model, changing the effort in place instead of opening a new
+  pane. `router effort --session <id> "<sub-step>"` lets an agent ask TypeSafe for a new
+  level mid-phase, with a cooldown, a per-session cap, a confidence floor, and a quota
+  recheck before raising effort; `router effort <id> <level>` is the manual override.
+  Claude Code switches through its `/effort` slider with "this session only", so the saved
+  default is never changed; Codex switches with its reasoning shortcut, which applies from
+  the next turn, so the continuation is queued for that turn. Every switch is confirmed on
+  screen and recorded in a new `effort_changes` table, shown by `router session`. An agent
+  can switch only its own pane, its sub-step must be one line of plain text, and the manual
+  form is refused inside an agent.
+- Opus 5.5 gains `xhigh` and `max`; GPT 6 Astra gains `xhigh` and `max`.
 - `router --version` (and `-V`) reports the package version.
 - `router run --worktree` launches the agent in a new Git worktree and branch created from
   the committed `HEAD` of a clean checkout, outside the checkout. The session records the
@@ -24,6 +37,13 @@ and released under a single tag.
 
 ### Changed
 
+- `max` and `ultra` are unlocked only by the word "ultra" in the root `router run` task,
+  and the unlock is inherited by continued sessions. Previously any task, including a
+  continued one an agent wrote, could unlock `ultra`; a next-phase task typed into the Herdr
+  plugin's resume prompt no longer unlocks it either.
+- The state database moves to schema version 3 (`effort_changes`, `effort_locks`). Sessions
+  may now record `xhigh` or `max`, which older router builds cannot read: after using them,
+  do not run an older build against the same state directory.
 - Renamed the npm scope from `@model-router/*` to `@agent-router/*` to match the
   repository name. Nothing was published under the old scope; a local checkout
   needs `npm install` and a re-run of `npm link -w @agent-router/router`.

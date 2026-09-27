@@ -1,4 +1,5 @@
 import type { RouterSession } from "../domain/session.js";
+import type { EffortChange } from "../store/effort-change-repository.js";
 
 function routeLabel(session: RouterSession): string {
   const route = session.route;
@@ -8,7 +9,7 @@ function routeLabel(session: RouterSession): string {
   return `${route.agent} / ${route.launchName} / ${route.effort} (${route.accountId})`;
 }
 
-export function formatSession(session: RouterSession): string {
+export function formatSession(session: RouterSession, effortChanges: EffortChange[] = []): string {
   const lines = [
     `Session: ${session.id}`,
     `Task: ${session.task}`,
@@ -35,6 +36,25 @@ export function formatSession(session: RouterSession): string {
       `Repository: ${workspace.repository.sourceRoot} (git dir ${workspace.repository.gitCommonDir})`,
       `Base commit: ${workspace.baseCommit}`,
     );
+  }
+  if (session.continuation === "in-place") {
+    lines.push("Continuation: in place (same pane as the previous session)");
+  }
+  if (session.liveEffort && session.liveEffort !== session.route?.effort) {
+    lines.push(`Current effort: ${session.liveEffort}`);
+  }
+  if (session.liveSwitchUnsupported) {
+    lines.push("Live effort switching: unsupported for this pane (new phases open a new pane)");
+  }
+  if (effortChanges.length > 0) {
+    lines.push("Effort history:");
+    for (const change of effortChanges) {
+      const confidence =
+        change.confidence === undefined ? "" : `, confidence ${change.confidence.toFixed(2)}`;
+      lines.push(
+        `  ${change.createdAt} ${change.source}: ${change.from} -> ${change.to} ${change.status} (${change.reason}${confidence})`,
+      );
+    }
   }
   lines.push(`Started: ${session.createdAt}`);
   return lines.join("\n");

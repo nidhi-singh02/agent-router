@@ -8,7 +8,13 @@ export interface OpenDatabaseOptions {
   home: string;
 }
 
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
+
+const MIGRATIONS: Record<number, string> = {
+  1: "001_initial.sql",
+  2: "002_capacity_reservations.sql",
+  3: "003_live_effort.sql",
+};
 
 export function databasePath(home: string): string {
   return path.join(home, "state.sqlite");
@@ -16,7 +22,8 @@ export function databasePath(home: string): string {
 
 function migrationSql(version: number): string {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const name = version === 1 ? "001_initial.sql" : "002_capacity_reservations.sql";
+  const name = MIGRATIONS[version];
+  if (!name) throw new Error(`No migration for schema version ${version}`);
   const candidate = path.join(here, `migrations/${name}`);
   if (existsSync(candidate)) {
     return readFileSync(candidate, "utf8");

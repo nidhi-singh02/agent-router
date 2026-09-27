@@ -35,6 +35,29 @@ run when the recorded workspace is no longer usable.
 If the source checkout changes while a new `--worktree` run is routing (new commit, or
 uncommitted files), the router does not create the worktree. Commit or clean up, then retry.
 
+## Live effort switching
+
+Off unless `liveEffort.enabled` is `true` (see [Configuration](configuration.md)). Schema
+version 3 adds two SQLite tables to the router state database:
+
+- `effort_changes`: one row per switch attempt (applied, no-change, or failed) with source
+  (`agent`, `manual`, `phase-boundary`), from/to effort, an outcome code, TypeSafe confidence,
+  and the bucketed signals. `router session <id>` shows a session's rows.
+- `effort_locks`: one lock per Herdr pane, so two callers never type into the same pane. A
+  `router effort` lock lasts about 200 s and an in-place continuation lock about 120 s; a lock
+  left by a crashed process expires on its own and is cleared by the next caller. While a
+  lock is held, an agent's `router effort` fails fast (exit 5 `switch-in-progress`) and the
+  manual form waits up to 10 s.
+
+Sessions may now record `xhigh` or `max`, which older router builds cannot read. After using
+them, do not point an older build at the same state directory.
+
+A switch drives each agent's TUI and was verified against Claude Code 2.1.283 and codex-cli
+0.156.1. After upgrading either CLI, rerun the manual checklist in
+[`validation/2026-09-26-live-effort-smoke.md`](validation/2026-09-26-live-effort-smoke.md)
+before relying on it; screen text the router does not recognize stops the switch rather than
+typing into the pane.
+
 ## Coordinator
 
 Local Worker tests cover create/renew/status/release. Do not `wrangler deploy` until the

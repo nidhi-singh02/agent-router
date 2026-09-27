@@ -31,6 +31,9 @@ directory: `~/Library/Application Support/model-router` on macOS,
   },
   "enrichment": {
     "enabled": true
+  },
+  "liveEffort": {
+    "enabled": false
   }
 }
 ```
@@ -45,6 +48,10 @@ one with `security add-generic-password -a "$USER" -s NAME -w`. For `typesafe.ap
 (official-cli/api, local-session, browser).
 `enrichment.enabled` defaults to `true`. Set it to `false` to prevent `router run` from
 resolving pull request size through GitHub; `--no-enrich` disables it for one invocation.
+`liveEffort.enabled` defaults to `false`. Set it to `true` to let the router change the
+reasoning effort of a running Opus 5.5 (`anthropic:claude-opus`) or GPT 6 Astra
+(`openai:gpt-6-astra`) pane instead of opening a new one; see "Live effort switching" in the
+README. When `false`, phases always open a new pane and `router effort` reports `disabled`.
 `MODEL_ROUTER_COORDINATOR_URL` overrides the file URL.
 Coordinator URLs must use HTTPS; HTTP is accepted only for `localhost`, `127.0.0.1`, or
 `[::1]` during local development.

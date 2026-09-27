@@ -41,6 +41,10 @@ and at least one agent CLI you are logged in to.
 | `resume-latest` | Route the next phase of an earlier session                         |
 | `usage-refresh` | Refresh local-session quota snapshots (headless)                   |
 
+`max` and `ultra` reasoning are unlocked only by the word "ultra" in the task you give
+`route`. A next-phase task typed into `resume-latest` inherits that choice but cannot
+unlock it.
+
 Invoke one directly:
 
 ```bash

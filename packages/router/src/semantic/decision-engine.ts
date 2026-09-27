@@ -5,6 +5,7 @@ import type { EnrichmentShapes } from "../enrich/buckets.js";
 import type { SemanticCandidate } from "./candidate.js";
 import { cacheValueQuestion } from "./cache-assessor.js";
 import { effortQuestion } from "./effort-selector.js";
+import { isTopTier } from "../live-effort/levels.js";
 import { deterministicFallback } from "./fallback.js";
 import { phaseQuestion } from "./phase-classifier.js";
 import { routeQuestion } from "./route-ranker.js";
@@ -18,7 +19,7 @@ export type { SemanticCandidate } from "./candidate.js";
 export interface DecideRouteInput {
   task: string;
   candidates: SemanticCandidate[];
-  userRequestedUltra: boolean;
+  topTierUnlocked: boolean;
   client: TypeSafePort;
   previousRoute?: {
     opaqueId: string;
@@ -206,7 +207,7 @@ export async function decideRoute(input: DecideRouteInput): Promise<RouteDecisio
         ...(input.enrichment ? { enrichment: input.enrichment } : {}),
       },
       questions: {
-        effort: effortQuestion([...selected.supportedEfforts], input.userRequestedUltra),
+        effort: effortQuestion([...selected.supportedEfforts], input.topTierUnlocked),
       },
     });
   } catch {
@@ -219,7 +220,7 @@ export async function decideRoute(input: DecideRouteInput): Promise<RouteDecisio
     };
   }
   const effort = effortResponse.answers.effort.choice as ReasoningEffort;
-  if (effort === "ultra" && !input.userRequestedUltra) {
+  if (isTopTier(effort) && !input.topTierUnlocked) {
     return { status: "invalid-choice" };
   }
   return {

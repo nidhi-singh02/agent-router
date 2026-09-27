@@ -1,9 +1,9 @@
 import type { AgentId } from "../domain/ids.js";
 import type { ReasoningEffort } from "../domain/model-profile.js";
 
-const CLAUDE_EFFORTS = new Set<ReasoningEffort>(["low", "medium", "high"]);
+const CLAUDE_EFFORTS = new Set<ReasoningEffort>(["low", "medium", "high", "xhigh", "max"]);
 // Codex reads model_reasoning_effort from config; `none` keeps the user's Codex default.
-const CODEX_EFFORTS = new Set<ReasoningEffort>(["low", "medium", "high", "ultra"]);
+const CODEX_EFFORTS = new Set<ReasoningEffort>(["low", "medium", "high", "xhigh", "max", "ultra"]);
 
 export function cursorModelId(launchName: string, effort: ReasoningEffort): string {
   if (effort === "none" || /^cursor-.+-(none|low|medium|high|ultra)$/.test(launchName)) {
