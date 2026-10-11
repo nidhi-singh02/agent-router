@@ -38,6 +38,18 @@ interface HerdrCall {
   visible?: string[];
 }
 
+function isGitDir(dir: string): boolean {
+  if (!existsSync(dir)) {
+    return false;
+  }
+  try {
+    git(dir, "rev-parse", "--git-dir");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** A fake Herdr that records every command and never starts a process. */
 function fakeHerdr(options: { failStart?: boolean } = {}) {
   const calls: HerdrCall[] = [];
@@ -46,9 +58,7 @@ function fakeHerdr(options: { failStart?: boolean } = {}) {
     const cwdAt = argv.indexOf("--cwd");
     if (argv[1] === "pane" && argv[2] === "split" && cwdAt !== -1) {
       const dir = argv[cwdAt + 1]!;
-      call.visible = existsSync(dir)
-        ? git(dir, "ls-files", "--others", "--cached").split("\n")
-        : [];
+      call.visible = isGitDir(dir) ? git(dir, "ls-files", "--others", "--cached").split("\n") : [];
     }
     calls.push(call);
     if (options.failStart && argv[1] === "agent" && argv[2] === "start") {
@@ -669,14 +679,16 @@ describe("continuing an isolated session", () => {
     expect(old.workspace).toBeUndefined();
     ctx.sessions.save({ ...old, phase: "planning" });
     const spy = spyGit();
+    const caller = tempDir();
     const next = await executeRun(
       "Implement the plan.",
       { dryRun: false, previousSessionId: old.id },
-      { ...ctx.deps, git: spy.git, cwd: tempDir() },
+      { ...ctx.deps, git: spy.git, cwd: caller },
     );
     expect(next.code).toBe(0);
     expect(spy.calls).toEqual([]);
-    expect(ctx.herdr.splitCwd(1)).toBeUndefined();
+    // No recorded workspace: the pane opens where this phase was started from.
+    expect(ctx.herdr.splitCwd(1)).toBe(caller);
     expect(next.json).not.toHaveProperty("workspace");
     expect(worktreePaths(ctx.repo)).toHaveLength(1);
     ctx.db.close();
@@ -684,7 +696,7 @@ describe("continuing an isolated session", () => {
 });
 
 describe("runs without --worktree", () => {
-  it("make no Git calls and split the pane exactly as before", async () => {
+  it("make no Git calls and split the pane in the caller's directory", async () => {
     const ctx = setup();
     const spy = spyGit();
     const result = await executeRun(
@@ -701,11 +713,51 @@ describe("runs without --worktree", () => {
       "--current",
       "--direction",
       "right",
+      "--cwd",
+      ctx.repo,
       "--no-focus",
     ]);
     expect(result.json).not.toHaveProperty("workspace");
     expect(result.output).not.toContain("Workspace:");
     expect(ctx.sessions.latest()?.workspace).toBeUndefined();
+    ctx.db.close();
+  });
+});
+
+describe("pane directory for a plain run", () => {
+  // Regression: a reused router-anchor workspace whose pane sits in another repository
+  // used to give the new pane that repository's directory, because no --cwd was passed.
+  it("opens the pane in deps.cwd, not the directory of the pane being split", async () => {
+    const ctx = setup();
+    const caller = tempDir();
+    const result = await executeRun(
+      "Implement the approved plan.",
+      { dryRun: false },
+      { ...ctx.deps, cwd: caller },
+    );
+    expect(result.code).toBe(0);
+    const argv = ctx.herdr.splits()[0]!.argv;
+    expect(argv.slice(0, 3)).toEqual(["herdr", "pane", "split"]);
+    expect(ctx.herdr.splitCwd()).toBe(caller);
+    ctx.db.close();
+  });
+
+  it("falls back to process.cwd() when deps.cwd is not set", async () => {
+    const ctx = setup();
+    const deps: RunDeps = { ...ctx.deps };
+    delete deps.cwd;
+    const result = await executeRun("Implement the approved plan.", { dryRun: false }, deps);
+    expect(result.code).toBe(0);
+    expect(ctx.herdr.splitCwd()).toBe(process.cwd());
+    ctx.db.close();
+  });
+
+  it("still opens a --worktree run in its worktree, not in deps.cwd", async () => {
+    const ctx = setup();
+    const result = await run(ctx.deps, "Implement the approved plan.");
+    expect(result.code).toBe(0);
+    expect(ctx.herdr.splitCwd()).toBe(result.json.workspace!.path);
+    expect(ctx.herdr.splitCwd()).not.toBe(ctx.repo);
     ctx.db.close();
   });
 });

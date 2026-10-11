@@ -47,6 +47,25 @@ and released under a single tag.
 - Renamed the npm scope from `@model-router/*` to `@agent-router/*` to match the
   repository name. Nothing was published under the old scope; a local checkout
   needs `npm install` and a re-run of `npm link -w @agent-router/router`.
+- Follow-up text for an agent pane that is already running (`existingPaneId`) goes through
+  `herdr-send` (`--wait-idle 15 --timeout 30000 --json`, never `--force`) instead of
+  `herdr agent prompt`. A refusal (exit 2, e.g. the pane shows an approval or question) is
+  reported with its reason and never retried; exit 4 (`sent_unconfirmed`) is never resent.
+  Exit 3 counts as sent only when herdr-send reports `state: idle` (it sent, then the wait
+  timed out); `busy` means nothing was sent, and anything else is reported as delivery
+  unknown and handled like exit 4. A pane given without a launch token is addressed by its
+  pane id throughout: the result and session keep no invented token or agent name, only the
+  name `herdr agent get` reports for that pane. The binary is found on `PATH` or through
+  `HERDR_SEND_BIN`, and a missing one is reported by name. The first handoff to a freshly
+  started agent still uses `herdr agent prompt`.
+
+### Fixed
+
+- A run without `--worktree` now opens its pane in the directory `router run` was started
+  from (`herdr pane split --cwd`). Previously the pane inherited the directory of the pane
+  it split, so a reused `router-anchor` workspace sitting in another repository started the
+  agent in that repository. A relative directory is resolved against the router's own
+  directory, and one that does not exist fails the launch before any pane is opened.
 
 ## [0.1.0] - 2026-09-18
 

@@ -558,10 +558,16 @@ export async function executeRun(
           existingLaunchToken: deps.existingLaunchToken,
           existingPaneId: deps.existingPaneId,
           // An isolated run always launches in its worktree, never in the caller's directory.
-          ...(workspace ? { cwd: workspace.path } : {}),
+          // Any other run launches where `router run` was started: without --cwd, Herdr would
+          // start the pane in the directory of the pane it splits (a reused router-anchor pane
+          // can be in an unrelated repository).
+          cwd: workspace?.path ?? deps.cwd ?? process.cwd(),
         });
+  // A follow-up herdr-send submitted but could not confirm is likewise live in its pane.
+  const sentUnconfirmed =
+    unconfirmedInPlace || ("sentUnconfirmed" in launch && launch.sentUnconfirmed === true);
   // An unconfirmed handoff may be running in the old pane, so its reservation is kept.
-  if (reservation && (options.dryRun || (!launch.ok && !unconfirmedInPlace))) {
+  if (reservation && (options.dryRun || (!launch.ok && !sentUnconfirmed))) {
     reservations.release(reservation.id);
   }
   // The pane lock held by an in-place handover is released once the new session that owns
@@ -591,7 +597,7 @@ export async function executeRun(
           reason: decision.reason,
           // An unconfirmed handoff most likely reached the pane, which is live either way: the
           // agent there must be able to use this session.
-          status: launch.ok || unconfirmedInPlace ? "launched" : "launch-failed",
+          status: launch.ok || sentUnconfirmed ? "launched" : "launch-failed",
           launchToken: launch.launchToken,
           agentName: launch.agentName,
           error: launch.ok ? undefined : redactCollectorText(launch.error ?? "launch failed"),

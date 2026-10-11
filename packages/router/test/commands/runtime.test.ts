@@ -195,8 +195,34 @@ describe("createDefaultRunDeps", () => {
     const childEnv = createProcessAdapter.mock.calls[0]?.[0]?.env;
     expect(childEnv?.TYPESAFE_API_KEY).toBeUndefined();
     expect(childEnv?.UNRELATED_VALUE).toBeUndefined();
-    expect(createHerdr).toHaveBeenCalledWith(adapter);
+    // herdr-send is resolved up front: either its path or why it is missing.
+    expect(createHerdr).toHaveBeenCalledWith(adapter, expect.any(Object));
+    const options = createHerdr.mock.calls[0]?.[1] as
+      { herdrSendBin?: string; herdrSendMissing?: string } | undefined;
+    expect(options?.herdrSendBin ?? options?.herdrSendMissing).toMatch(/herdr-send/);
     expect(deps.herdr).toBe(herdr);
+  });
+
+  it("passes HERDR_SEND_BIN to the Herdr client, or why it cannot be used", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "herdr-send-bin-"));
+    const bin = path.join(dir, "my-herdr-send");
+    writeFileSync(bin, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    const createHerdr = vi.fn(() => stubHerdr());
+    const make = (value: string) =>
+      createDefaultRunDeps(
+        { MODEL_ROUTER_HOME: homeWithAccount(), HERDR_ENV: "1", HERDR_SEND_BIN: value },
+        {
+          createProcessAdapter: () => async () => ({ ok: true, code: 0, stdout: "", stderr: "" }),
+          createHerdr,
+          collectorsForAccount: () => idleCollectors,
+        },
+      );
+    await make(bin);
+    expect(createHerdr.mock.calls[0]?.[1]).toEqual({ herdrSendBin: bin });
+    await make(path.join(dir, "missing"));
+    expect(createHerdr.mock.calls[1]?.[1]).toEqual({
+      herdrSendMissing: expect.stringMatching(/HERDR_SEND_BIN=.*missing is not an executable/),
+    });
   });
 
   it("runs only local-session collectors in default local usage mode", async () => {

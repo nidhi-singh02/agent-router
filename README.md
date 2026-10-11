@@ -324,6 +324,7 @@ router run "implement feature X" --worktree
   without a shell.
 - The agent is launched with that worktree as its working directory (`herdr pane split
 --cwd`). The router does not pass an agent's own worktree flags; it owns the workspace.
+  Without `--worktree`, the pane opens in the directory `router run` was started from.
 - The session records the worktree path, branch, repository (its shared `.git` directory and
   source checkout), starting commit, and that isolation is enabled. `router session` and
   `router session --json` show them.

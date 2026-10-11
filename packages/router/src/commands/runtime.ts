@@ -12,7 +12,9 @@ import {
   createHerdrClient,
   createHerdrPaneClient,
   createProcessCommandAdapter,
+  resolveHerdrSendBin,
   type HerdrClient,
+  type HerdrClientOptions,
   type HerdrPaneClient,
   type RunCommand,
 } from "../launch/herdr-client.js";
@@ -106,7 +108,7 @@ export function resolveCredential(
 export interface RuntimeOverrides {
   createTypeSafeClient?: (apiKey: string) => TypeSafePort;
   createProcessAdapter?: (options?: { env?: NodeJS.ProcessEnv }) => RunCommand;
-  createHerdr?: (runCommand: RunCommand) => HerdrClient;
+  createHerdr?: (runCommand: RunCommand, options?: HerdrClientOptions) => HerdrClient;
   createHerdrPane?: (runCommand: RunCommand) => HerdrPaneClient;
   collectorsForAccount?: (account: Account) => UsageCollector[];
   activityClient?: CoordinatorClient;
@@ -209,7 +211,15 @@ export async function createDefaultRunDeps(
     const adapter = (overrides.createProcessAdapter ?? createProcessCommandAdapter)({
       env: sanitizeRuntimeEnv(env),
     });
-    herdr = (overrides.createHerdr ?? createHerdrClient)(adapter);
+    // Follow-up injection goes through herdr-send; resolve it now so a missing binary is
+    // reported by name instead of as a spawn error.
+    const herdrSend = resolveHerdrSendBin(env);
+    herdr = (overrides.createHerdr ?? createHerdrClient)(
+      adapter,
+      herdrSend.bin === undefined
+        ? { herdrSendMissing: herdrSend.error }
+        : { herdrSendBin: herdrSend.bin },
+    );
     // Pane reads and keystrokes are quick; a short per-call limit keeps a hung Herdr call
     // inside the lock TTLs, which assume each call returns within seconds.
     const paneAdapter = (overrides.createProcessAdapter ?? createProcessCommandAdapter)({

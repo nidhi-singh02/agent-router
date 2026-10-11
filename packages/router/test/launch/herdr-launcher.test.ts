@@ -417,10 +417,10 @@ describe("herdr launcher", () => {
     expect([first.agentName, second.agentName]).toEqual(names);
   });
 
-  it("prompts the same agent name when retrying with an existing launch token and pane", async () => {
-    const prompts: string[][] = [];
+  it("sends a retry with an existing launch token and pane to the same agent via herdr-send", async () => {
+    const calls: string[][] = [];
     const herdr = createHerdrClient(async (argv) => {
-      if (argv[2] === "prompt") prompts.push([...argv]);
+      calls.push([...argv]);
       return { ok: true, code: 0, stdout: "w1:p9\n", stderr: "" };
     });
     const base = {
@@ -433,14 +433,19 @@ describe("herdr launcher", () => {
       herdr,
     };
     const first = await launchRoutedAgent(base);
-    await launchRoutedAgent({
+    const before = calls.length;
+    const second = await launchRoutedAgent({
       ...base,
       existingLaunchToken: first.launchToken,
       existingPaneId: first.paneId,
     });
-    expect(prompts).toHaveLength(2);
-    expect(prompts[1]?.[3]).toBe(prompts[0]?.[3]);
-    expect(prompts[0]?.[3]).toMatch(/^router-claude-[0-9a-f]{6}$/);
+    expect(second.ok).toBe(true);
+    const prompt = calls.find((argv) => argv[2] === "prompt")!;
+    expect(prompt[3]).toMatch(/^router-claude-[0-9a-f]{6}$/);
+    // The follow-up is one herdr-send call and nothing else (no split, start or raw prompt).
+    expect(calls.slice(before)).toEqual([
+      ["herdr-send", "--wait-idle", "15", "--timeout", "30000", "--json", "--", prompt[3], "task"],
+    ]);
   });
 
   it("closes the pane it created when the agent fails to start", async () => {
