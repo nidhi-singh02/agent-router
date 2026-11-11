@@ -2,7 +2,7 @@
 import { realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { Command, CommanderError } from "commander";
+import { Command, CommanderError, Option } from "commander";
 import { executeRun, type RunDeps } from "./commands/run.js";
 import { executeEffort, type EffortDeps, type EffortRequest } from "./commands/effort.js";
 import { ReasoningEffortSchema } from "./domain/model-profile.js";
@@ -340,41 +340,45 @@ export function createProgram(options: CliOptions = {}): Command & { exitCode?: 
   program
     .command("usage")
     .command("refresh")
-    .option("--source <source>", "local-session|official-cli|browser", "local-session")
+    .addOption(
+      new Option("--source <source>", "Usage collector to run")
+        .choices(["local-session", "official-cli", "browser"] as const)
+        .default("local-session"),
+    )
     .option("--dry-run", "Do not persist", false)
-    .action(async (flags: { source?: string; dryRun?: boolean }) => {
-      const source =
-        flags.source === "official-cli" || flags.source === "browser"
-          ? flags.source
-          : "local-session";
-      const config = loadConfig({ env });
-      const db = openDatabase({ home: config.home });
-      try {
-        const repo = new UsageRepository(db);
-        const printed = await usageRefresh({
-          source,
-          dryRun: Boolean(flags.dryRun),
-          accounts: config.accounts,
-          collect: (account) => {
-            const collectors = collectorsForAccount(account).filter((collector) =>
-              source === "browser"
-                ? collector.kind === "browser-dashboard"
-                : collector.kind === source,
-            );
-            return collectUsageChain(account, collectors);
-          },
-          persist: (snapshot) => {
-            repo.save(snapshot);
-          },
-        });
-        stdout.write(`${printed}\n`);
-      } catch (error) {
-        stderr.write(`${formatError(error)}\n`);
-        program.exitCode = 1;
-      } finally {
-        db.close();
-      }
-    });
+    .action(
+      async (flags: { source: "local-session" | "official-cli" | "browser"; dryRun?: boolean }) => {
+        const source = flags.source;
+        let db;
+        try {
+          const config = loadConfig({ env });
+          db = openDatabase({ home: config.home });
+          const repo = new UsageRepository(db);
+          const printed = await usageRefresh({
+            source,
+            dryRun: Boolean(flags.dryRun),
+            accounts: config.accounts,
+            collect: (account) => {
+              const collectors = collectorsForAccount(account).filter((collector) =>
+                source === "browser"
+                  ? collector.kind === "browser-dashboard"
+                  : collector.kind === source,
+              );
+              return collectUsageChain(account, collectors);
+            },
+            persist: (snapshot) => {
+              repo.save(snapshot);
+            },
+          });
+          stdout.write(`${printed}\n`);
+        } catch (error) {
+          stderr.write(`${formatError(error)}\n`);
+          program.exitCode = 1;
+        } finally {
+          db?.close();
+        }
+      },
+    );
   return program;
 }
 
