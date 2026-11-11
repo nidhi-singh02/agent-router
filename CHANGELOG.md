@@ -9,6 +9,8 @@ and released under a single tag.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-11
+
 ### Added
 
 - Live effort switching for Opus 5.5 and GPT 6 Astra, opt-in with `liveEffort.enabled`.
@@ -47,6 +49,16 @@ and released under a single tag.
 - Renamed the npm scope from `@model-router/*` to `@agent-router/*` to match the
   repository name. Nothing was published under the old scope; a local checkout
   needs `npm install` and a re-run of `npm link -w @agent-router/router`.
+- `router usage refresh --source` rejects values other than `local-session`, `official-cli`,
+  and `browser`. An unknown value used to run the `local-session` collector silently; a
+  mistyped `ROUTER_USAGE_SOURCE` in the Herdr plugin now fails instead.
+
+### Fixed
+
+- `router usage refresh` reports a malformed or invalid `config.json` as an error with exit
+  code 1 instead of an uncaught stack trace.
+- Configuration errors name the `config.json` path, and validation errors (config fields,
+  `router effort --step-kind`) print one readable line per field instead of a raw JSON array.
 
 ## [0.1.0] - 2026-09-18
 
