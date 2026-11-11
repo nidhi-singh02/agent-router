@@ -2,7 +2,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { AccountSchema } from "../domain/account.js";
-import { ConfigFileSchema, type ConfiguredAccount } from "./config-schema.js";
+import { z } from "zod";
+import { ConfigFileSchema, type ConfigFile, type ConfiguredAccount } from "./config-schema.js";
 
 export interface LoadConfigOptions {
   env?: NodeJS.Dict<string>;
@@ -47,16 +48,30 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
   const env = options.env ?? process.env;
   const home = resolveHome(env);
   const filePath = path.join(home, "config.json");
-  const raw = existsSync(filePath) ? JSON.parse(readFileSync(filePath, "utf8")) : { accounts: [] };
-  const file = ConfigFileSchema.parse(raw);
+  let file: ConfigFile;
+  let accounts: ConfiguredAccount[];
+  try {
+    const raw = existsSync(filePath)
+      ? JSON.parse(readFileSync(filePath, "utf8"))
+      : { accounts: [] };
+    file = ConfigFileSchema.parse(raw);
+    accounts = file.accounts.map((account) => {
+      const parsed = AccountSchema.parse(account);
+      return {
+        ...parsed,
+        credentialRef: account.credentialRef,
+      };
+    });
+  } catch (error) {
+    const detail =
+      error instanceof z.ZodError
+        ? z.prettifyError(error)
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    throw new Error(`Invalid config at ${filePath}:\n${detail}`, { cause: error });
+  }
   const coordinatorUrl = env.MODEL_ROUTER_COORDINATOR_URL ?? file.coordinator?.url;
-  const accounts: ConfiguredAccount[] = file.accounts.map((account) => {
-    const parsed = AccountSchema.parse(account);
-    return {
-      ...parsed,
-      credentialRef: account.credentialRef,
-    };
-  });
   return {
     home,
     accounts,
